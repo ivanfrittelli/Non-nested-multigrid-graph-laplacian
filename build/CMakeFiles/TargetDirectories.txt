@@ -1,0 +1,10 @@
+/home/unipi/i.frittelli/Desktop/HPSPDE/Multigrid poisson/build/CMakeFiles/main.dir
+/home/unipi/i.frittelli/Desktop/HPSPDE/Multigrid poisson/build/CMakeFiles/run.dir
+/home/unipi/i.frittelli/Desktop/HPSPDE/Multigrid poisson/build/CMakeFiles/debug.dir
+/home/unipi/i.frittelli/Desktop/HPSPDE/Multigrid poisson/build/CMakeFiles/release.dir
+/home/unipi/i.frittelli/Desktop/HPSPDE/Multigrid poisson/build/CMakeFiles/runclean.dir
+/home/unipi/i.frittelli/Desktop/HPSPDE/Multigrid poisson/build/CMakeFiles/distclean.dir
+/home/unipi/i.frittelli/Desktop/HPSPDE/Multigrid poisson/build/CMakeFiles/strip_comments.dir
+/home/unipi/i.frittelli/Desktop/HPSPDE/Multigrid poisson/build/CMakeFiles/info.dir
+/home/unipi/i.frittelli/Desktop/HPSPDE/Multigrid poisson/build/CMakeFiles/edit_cache.dir
+/home/unipi/i.frittelli/Desktop/HPSPDE/Multigrid poisson/build/CMakeFiles/rebuild_cache.dir
