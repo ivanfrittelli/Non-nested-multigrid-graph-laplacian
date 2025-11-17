@@ -22,15 +22,19 @@
 #include <deal.II/lac/precondition.h>
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/sparse_matrix.h>
+#include <deal.II/lac/sparse_direct.h>
 #include <deal.II/lac/vector.h>
+#include <deal.II/lac/arpack_solver.h>
 
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/error_estimator.h>
+#include <deal.II/numerics/matrix_creator.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
 
 #include <fstream>
 #include <iostream>
+#include <string>
 
 using namespace dealii;
 
@@ -48,6 +52,7 @@ struct PoissonParameters
       prm.add_parameter("Right hand side expression", rhs_expression);
       prm.add_parameter("Neumann boundary expression", neumann_expression);
       prm.add_parameter("Neumann boundary ids", neumann_boundary_ids);
+      prm.add_parameter("Number of eigenvalues", n_of_eigenvalues);
     }
     prm.leave_subsection();
 
@@ -79,6 +84,9 @@ struct PoissonParameters
   unsigned int fe_degree                 = 1;
   unsigned int initial_refinement        = 3;
   unsigned int n_cycles                  = 1;
+
+  unsigned int n_of_eigenvalues          = 1;
+
   std::string  exact_solution_expression = "cos(pi*x)*cos(pi*y)";
   std::string  rhs_expression            = "2*pi*pi*cos(pi*x)*cos(pi*y)";
   std::string  neumann_expression        = "cos(2*pi*x)";
@@ -116,6 +124,8 @@ private:
   setup_system();
   void
   assemble_system();
+  void
+  compute_eigenvalues_and_eigenvectors();
   void
   solve();
   void
@@ -321,7 +331,68 @@ Poisson<dim>::assemble_system()
   //                                    system_rhs);
 }
 
+template <int dim>
+void
+Poisson<dim>::compute_eigenvalues_and_eigenvectors() {
 
+    SolverControl control;
+
+    ArpackSolver::AdditionalData data(par.n_of_eigenvalues*3 + 2, // Number of Arnoldi/Lanczos vectors
+                                        ArpackSolver::largest_magnitude,
+                                        true); // Symmetric problem
+
+    ArpackSolver solver(control, data);
+
+    std::vector<std::complex< double >>	computed_eigenvalues(par.n_of_eigenvalues);
+    std::vector<Vector<double>> computed_eigenvectors(par.n_of_eigenvalues * 2);
+
+    for (auto & eigenvector : computed_eigenvectors) {
+        eigenvector.reinit(dof_handler.n_dofs());
+    }
+
+    QGauss<dim>     quadrature_formula(fe.degree + 1);
+
+    SparseMatrix<double> mass_matrix;
+    mass_matrix.reinit(sparsity_pattern);
+    MatrixCreator::create_mass_matrix(dof_handler, quadrature_formula, mass_matrix, {}, constraints);
+
+    SparseDirectUMFPACK stiffness_inverse;
+    stiffness_inverse.initialize(system_matrix);
+
+    solver.solve(system_matrix,
+                mass_matrix,
+                stiffness_inverse,
+                computed_eigenvalues,
+                computed_eigenvectors);
+
+
+    DataOut<dim> data_out;
+    data_out.attach_dof_handler(dof_handler);
+
+    std::cout<<"Eigenvalues: \n";
+
+    for (unsigned int i = 0; i < par.n_of_eigenvalues; i++) {
+        std::cout<<"Number " << i << ": " << computed_eigenvalues[i] <<"\n";
+
+        data_out.add_data_vector(computed_eigenvectors[i], "eigenvector" + std::to_string(i));
+
+        data_out.build_patches();
+
+        auto fname =
+        "eigenvector-" + std::to_string(dim) + "d_" + std::to_string(i) + ".vtu";
+
+        std::ofstream output(fname);
+        data_out.write_vtu(output);
+
+        static std::vector<std::pair<double, std::string>> times_and_names_eig;
+        times_and_names_eig.push_back({i, fname});
+
+        std::ofstream pvd_output("eigenvectors-" + std::to_string(dim) + "d.pvd");
+
+        DataOutBase::write_pvd_record(pvd_output, times_and_names_eig);
+    }
+
+}
 
 template <int dim>
 void
