@@ -92,7 +92,7 @@ main_EXTERNAL_OBJECTS =
 
 main: CMakeFiles/main.dir/main.cpp.o
 main: CMakeFiles/main.dir/build.make
-main: /usr/lib/x86_64-linux-gnu/libdeal.ii.g.so.9.6.0
+main: /usr/lib/x86_64-linux-gnu/libdeal.ii.so.9.6.0
 main: /usr/lib/x86_64-linux-gnu/libtrilinos_pike-blackbox.so
 main: /usr/lib/x86_64-linux-gnu/libtrilinos_trilinoscouplings.so
 main: /usr/lib/x86_64-linux-gnu/libtrilinos_piro.so

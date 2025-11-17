@@ -4,7 +4,7 @@ message(
 #  Project  main  set up with  deal.II-9.6.0  found at
 #      /usr
 #
-#  CMAKE_BUILD_TYPE:          Debug
+#  CMAKE_BUILD_TYPE:          Release
 #
 #  You can now run
 #       $ make                - to compile and link the program
