@@ -12,10 +12,6 @@
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_values.h>
 
-#include <deal.II/grid/grid_generator.h>
-#include <deal.II/grid/grid_refinement.h>
-#include <deal.II/grid/tria.h>
-
 #include <deal.II/lac/affine_constraints.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/full_matrix.h>
@@ -32,13 +28,21 @@
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
 
+#  include <deal.II/grid/grid_in.h>
+#  include <deal.II/grid/grid_out.h>
+#include <deal.II/grid/grid_refinement.h>
+#  include <deal.II/grid/grid_tools.h>
+#  include <deal.II/grid/tria.h>
+#  include <deal.II/grid/tria_accessor.h>
+#  include <deal.II/grid/tria_description.h>
+#  include <deal.II/grid/tria_iterator.h>
+
 #include <fstream>
 #include <iostream>
 #include <string>
 
 using namespace dealii;
 
-template <int dim>
 struct PoissonParameters
 {
   PoissonParameters()
@@ -62,22 +66,23 @@ struct PoissonParameters
 
     try
       {
-        prm.parse_input("poisson_" + std::to_string(dim) + "d.prm");
+        prm.parse_input("poisson.prm");
       }
     catch (std::exception &exc)
       {
-        prm.print_parameters("poisson_" + std::to_string(dim) + "d.prm");
-        prm.parse_input("poisson_" + std::to_string(dim) + "d.prm");
+        prm.print_parameters("poisson.prm");
+        prm.parse_input("poisson.prm");
       }
     std::map<std::string, double> constants;
     constants["pi"] = numbers::PI;
-    exact_solution.initialize(FunctionParser<dim>::default_variable_names(),
+
+    exact_solution.initialize(FunctionParser<3>::default_variable_names(),
                               {exact_solution_expression},
                               constants);
-    rhs_function.initialize(FunctionParser<dim>::default_variable_names(),
+    rhs_function.initialize(FunctionParser<3>::default_variable_names(),
                             {rhs_expression},
                             constants);
-    neumann_function.initialize(FunctionParser<dim>::default_variable_names(),
+    neumann_function.initialize(FunctionParser<3>::default_variable_names(),
                                 {neumann_expression},
                                 constants);
   }
@@ -92,9 +97,9 @@ struct PoissonParameters
   std::string  neumann_expression        = "cos(2*pi*x)";
   std::set<types::boundary_id> neumann_boundary_ids = {};
 
-  FunctionParser<dim> exact_solution;
-  FunctionParser<dim> rhs_function;
-  FunctionParser<dim> neumann_function;
+  FunctionParser<3> exact_solution;
+  FunctionParser<3> rhs_function;
+  FunctionParser<3> neumann_function;
 
   mutable ParsedConvergenceTable convergence_table;
 
@@ -103,19 +108,17 @@ struct PoissonParameters
 
 
 
-template <int dim>
+
 class Poisson
 {
 public:
-  Poisson(const PoissonParameters<dim> &parameters);
+  Poisson(const PoissonParameters &parameters);
   void
   run();
 
 private:
   void
   make_grid();
-  void
-  estimate();
   void
   mark();
   void
@@ -125,17 +128,15 @@ private:
   void
   assemble_system();
   void
-  compute_eigenvalues_and_eigenvectors();
-  void
   solve();
   void
   output_results(const unsigned int cycle) const;
 
-  const PoissonParameters<dim> &par;
+  const PoissonParameters &par;
 
-  Triangulation<dim> triangulation;
-  FE_Q<dim>          fe;
-  DoFHandler<dim>    dof_handler;
+  Triangulation<1,3> triangulation;
+  FE_Q<1,3>          fe;
+  DoFHandler<1,3>    dof_handler;
 
   AffineConstraints<double> constraints;
 
@@ -144,27 +145,95 @@ private:
 
   Vector<double> solution;
   Vector<double> system_rhs;
-
-  Vector<float> estimated_error_per_cell;
 };
 
 
 
-template <int dim>
-Poisson<dim>::Poisson(const PoissonParameters<dim> &par)
+
+Poisson::Poisson(const PoissonParameters &par)
   : par(par)
   , fe(par.fe_degree)
   , dof_handler(triangulation)
 {}
 
 
-
-template <int dim>
 void
-Poisson<dim>::make_grid()
+Poisson::make_grid()
 {
-  GridGenerator::hyper_cube(triangulation, -1, 1, true);
-  triangulation.refine_global(par.initial_refinement);
+  std::ifstream in("mesh.vtk");
+
+  //Contiene ciò che devo leggere dal file
+  std::string buffer;
+
+  //Le prime 4 righe non contengono nulla
+  for (int i = 0; i < 4; i++)
+    getline(in, buffer);
+
+  //La parola POINTS, non ci serve
+  in >> buffer;
+
+  //Numero di punti
+  in >> buffer;
+  int n_points = std::stoi(buffer);
+  std::vector<Point<3>> points(n_points);
+
+  //Il tipo della variabile, non ci serve
+  in >> buffer;
+
+  //Variabili temporanee
+  double x,y,z;
+
+  for (int i = 0; i < n_points; i++) {
+    //Le tre coordinate
+    in >> buffer;
+    x = std::stod(buffer);
+
+    in >> buffer;
+    y = std::stod(buffer);
+
+    in >> buffer;
+    z = std::stod(buffer);
+
+    points[i] = Point<3>(x,y,z);
+  }
+
+  //Per ora ho cancellato dalla mesh l'offset, poi vedo
+
+  //La parola CELLS, non ci serve
+  in >> buffer;
+
+  //Il numero di celle
+  in >> buffer;
+  int n_cells = std::stoi(buffer);
+
+
+  //Parole che non ci servono
+  for (int i = 0; i < 3; i++)
+    in >> buffer;
+
+  std::vector<std::array<int,GeometryInfo<1>::vertices_per_cell>>
+    cell_vertices;
+
+  int node1, node2;
+  for (int i = 0; i < 2 * (n_cells-1); i++) {
+    in >> buffer;
+    node1 = std::stoi(buffer);
+
+    i++;
+
+    in >> buffer;
+    node2 = std::stoi(buffer);
+
+    cell_vertices.push_back({node1, node2});
+  }
+  
+
+   std::vector<CellData<1>> cells(cell_vertices.size(), CellData<1>());
+  for (unsigned int i=0; i<cell_vertices.size(); ++i)
+    for (unsigned int j=0; j<GeometryInfo<1>::vertices_per_cell; ++j)
+      cells[i].vertices[j] = cell_vertices[i][j];
+
+  triangulation.create_triangulation (points, cells, SubCellData());
 
   std::cout << "   Number of active cells: " << triangulation.n_active_cells()
             << std::endl
@@ -173,40 +242,8 @@ Poisson<dim>::make_grid()
 }
 
 
-
-template <int dim>
 void
-Poisson<dim>::estimate()
-{
-  KellyErrorEstimator<dim>::estimate(dof_handler,
-                                     QGauss<dim - 1>(fe.degree + 1),
-                                     {},
-                                     solution,
-                                     estimated_error_per_cell);
-}
-
-template <int dim>
-void
-Poisson<dim>::mark()
-{
-  GridRefinement::refine_and_coarsen_fixed_number(triangulation,
-                                                  estimated_error_per_cell,
-                                                  0.3,
-                                                  0.03);
-}
-
-template <int dim>
-void
-Poisson<dim>::refine()
-{
-  triangulation.execute_coarsening_and_refinement();
-}
-
-
-
-template <int dim>
-void
-Poisson<dim>::setup_system()
+Poisson::setup_system()
 {
   dof_handler.distribute_dofs(fe);
 
@@ -238,28 +275,20 @@ Poisson<dim>::setup_system()
 
   solution.reinit(dof_handler.n_dofs());
   system_rhs.reinit(dof_handler.n_dofs());
-
-  estimated_error_per_cell.reinit(triangulation.n_active_cells());
 }
 
 
 
-template <int dim>
-void
-Poisson<dim>::assemble_system()
-{
-  QGauss<dim>     quadrature_formula(fe.degree + 1);
-  QGauss<dim - 1> face_quadrature_formula(fe.degree + 1);
 
-  FEValues<dim> fe_values(fe,
+void
+Poisson::assemble_system()
+{
+  QGauss<1>     quadrature_formula(fe.degree + 1);
+
+  FEValues<1,3> fe_values(fe,
                           quadrature_formula,
                           update_values | update_gradients |
                             update_quadrature_points | update_JxW_values);
-
-  FEFaceValues<dim> fe_face_values(fe,
-                                   face_quadrature_formula,
-                                   update_values | update_quadrature_points |
-                                     update_JxW_values);
 
   const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
 
@@ -289,114 +318,16 @@ Poisson<dim>::assemble_system()
                             fe_values.JxW(q_index));            // dx
           }
 
-      // Neumann boundary condition
-      for (const auto &f : cell->face_indices())
-        if (cell->face(f)->at_boundary() &&
-            par.neumann_boundary_ids.find(cell->face(f)->boundary_id()) !=
-              par.neumann_boundary_ids.end())
-          {
-            fe_face_values.reinit(cell, f);
-            for (const unsigned int q_index :
-                 fe_face_values.quadrature_point_indices())
-              for (const unsigned int i : fe_face_values.dof_indices())
-                cell_rhs(i) +=
-                  (fe_face_values.shape_value(i, q_index) * // phi_i(x_q)
-                   par.neumann_function.value(
-                     fe_face_values.quadrature_point(q_index)) * // g(x_q)
-                   fe_face_values.JxW(q_index));                 // ds
-          }
-
       cell->get_dof_indices(local_dof_indices);
       constraints.distribute_local_to_global(
         cell_matrix, cell_rhs, local_dof_indices, system_matrix, system_rhs);
-      // for (const unsigned int i : fe_values.dof_indices())
-      //   {
-      //     for (const unsigned int j : fe_values.dof_indices())
-      //       system_matrix.add(local_dof_indices[i],
-      //                         local_dof_indices[j],
-      //                         cell_matrix(i, j));
-
-      //     system_rhs(local_dof_indices[i]) += cell_rhs(i);
-      //   }
-    }
-
-  // std::map<types::global_dof_index, double> boundary_values;
-  // VectorTools::interpolate_boundary_values(dof_handler,
-  //                                          0,
-  //                                          par.exact_solution,
-  //                                          boundary_values);
-  // MatrixTools::apply_boundary_values(boundary_values,
-  //                                    system_matrix,
-  //                                    solution,
-  //                                    system_rhs);
-}
-
-template <int dim>
-void
-Poisson<dim>::compute_eigenvalues_and_eigenvectors() {
-
-    SolverControl control;
-
-    ArpackSolver::AdditionalData data(par.n_of_eigenvalues*3 + 2, // Number of Arnoldi/Lanczos vectors
-                                        ArpackSolver::largest_magnitude,
-                                        true); // Symmetric problem
-
-    ArpackSolver solver(control, data);
-
-    std::vector<std::complex< double >>	computed_eigenvalues(par.n_of_eigenvalues);
-    std::vector<Vector<double>> computed_eigenvectors(par.n_of_eigenvalues * 2);
-
-    for (auto & eigenvector : computed_eigenvectors) {
-        eigenvector.reinit(dof_handler.n_dofs());
-    }
-
-    QGauss<dim>     quadrature_formula(fe.degree + 1);
-
-    SparseMatrix<double> mass_matrix;
-    mass_matrix.reinit(sparsity_pattern);
-    MatrixCreator::create_mass_matrix(dof_handler, quadrature_formula, mass_matrix, {}, constraints);
-
-    SparseDirectUMFPACK stiffness_inverse;
-    stiffness_inverse.initialize(system_matrix);
-
-    solver.solve(system_matrix,
-                mass_matrix,
-                stiffness_inverse,
-                computed_eigenvalues,
-                computed_eigenvectors);
-
-
-    DataOut<dim> data_out;
-    data_out.attach_dof_handler(dof_handler);
-
-    std::cout<<"Eigenvalues: \n";
-
-    for (unsigned int i = 0; i < par.n_of_eigenvalues; i++) {
-        std::cout<<"Number " << i << ": " << computed_eigenvalues[i] <<"\n";
-
-        data_out.add_data_vector(computed_eigenvectors[i], "eigenvector" + std::to_string(i));
-
-        data_out.build_patches();
-
-        auto fname =
-        "eigenvector-" + std::to_string(dim) + "d_" + std::to_string(i) + ".vtu";
-
-        std::ofstream output(fname);
-        data_out.write_vtu(output);
-
-        static std::vector<std::pair<double, std::string>> times_and_names_eig;
-        times_and_names_eig.push_back({i, fname});
-
-        std::ofstream pvd_output("eigenvectors-" + std::to_string(dim) + "d.pvd");
-
-        DataOutBase::write_pvd_record(pvd_output, times_and_names_eig);
     }
 
 }
 
-template <int dim>
+
 void
-Poisson<dim>::solve()
+Poisson::solve()
 {
   SolverControl            solver_control(1000, 1e-12);
   SolverCG<Vector<double>> solver(solver_control);
@@ -409,20 +340,19 @@ Poisson<dim>::solve()
 
 
 
-template <int dim>
+
 void
-Poisson<dim>::output_results(const unsigned int cycle) const
+Poisson::output_results(const unsigned int cycle) const
 {
-  DataOut<dim> data_out;
+  DataOut<1,3> data_out;
 
   data_out.attach_dof_handler(dof_handler);
   data_out.add_data_vector(solution, "solution");
-  data_out.add_data_vector(estimated_error_per_cell, "estimator");
 
   data_out.build_patches();
 
   auto fname =
-    "solution-" + std::to_string(dim) + "d_" + std::to_string(cycle) + ".vtu";
+    "solution_" + std::to_string(cycle) + ".vtu";
 
   std::ofstream output(fname);
   data_out.write_vtu(output);
@@ -430,33 +360,28 @@ Poisson<dim>::output_results(const unsigned int cycle) const
   static std::vector<std::pair<double, std::string>> times_and_names;
   times_and_names.push_back({cycle, fname});
 
-  std::ofstream pvd_output("solution-" + std::to_string(dim) + "d.pvd");
+  std::ofstream pvd_output("solution.pvd");
 
   DataOutBase::write_pvd_record(pvd_output, times_and_names);
 }
 
 
 
-template <int dim>
-void
-Poisson<dim>::run()
-{
-  std::cout << "Solving problem in " << dim << " space dimensions."
-            << std::endl;
 
+void
+Poisson::run()
+{
   for (unsigned int cycle = 0; cycle < par.n_cycles; ++cycle)
     {
       if (cycle == 0)
         make_grid();
       else
         {
-          mark();
-          refine();
+          triangulation.refine_global();
         }
       setup_system();
       assemble_system();
       solve();
-      estimate();
       output_results(cycle);
       par.convergence_table.error_from_exact(dof_handler,
                                              solution,
@@ -471,16 +396,10 @@ int
 main()
 {
   {
-    PoissonParameters<2> par;
-    Poisson<2>           laplace_problem_2d(par);
-    laplace_problem_2d.run();
+    PoissonParameters par;
+    Poisson           laplace_problem_1d(par);
+    laplace_problem_1d.run();
   }
-
-  // {
-  //   PoissonParameters<3> par;
-  //   Poisson<3>           laplace_problem_3d(par);
-  //   laplace_problem_3d.run();
-  // }
 
   return 0;
 }
