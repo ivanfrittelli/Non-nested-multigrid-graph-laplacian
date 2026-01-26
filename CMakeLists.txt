@@ -10,6 +10,10 @@ set(TARGET "main")
 # Declare source files
 set(TARGET_SRC
   ${TARGET}.cpp
+  src/graph.cpp
+  src/MG_Level.cpp
+  src/multigridpreconditioner.cpp
+  src/poisson.cpp
 )
 
 # --- Deal.II setup ---
@@ -24,6 +28,18 @@ if(NOT ${deal.II_FOUND})
   )
 endif()
 
+add_executable(${TARGET} ${TARGET_SRC})
+
+target_include_directories(${TARGET}
+  PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(CMAKE_CXX_COMPILER mpicxx)
+
 deal_ii_initialize_cached_variables()
 project(${TARGET})
-deal_ii_invoke_autopilot()
+deal_ii_setup_target(${TARGET})

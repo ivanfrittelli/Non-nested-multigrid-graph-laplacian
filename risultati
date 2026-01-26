@@ -1,0 +1,37 @@
+Coarse grid solver
+
+Creazione griglia.
+Inizializzazione sistema. 
+   Number of degrees of freedom in level 0 : 50000
+   Number of degrees of freedom in level 1 : 25001
+   Number of degrees of freedom in level 2 : 12502
+   Number of degrees of freedom in level 3 : 6252
+Assemblaggio sistema. 
+Risoluzione sistema. 
+   41 CG iterations needed to obtain convergence.
+ Tempo impiegato multigrid: 12.5452 secondi.
+   137 CG iterations needed to obtain convergence.
+ Tempo impiegato no multigrid: 2.31597 secondi.
+Scrittura output in corso. 
+cells dofs   u_L2_norm  u_Linfty_norm  u_H1_norm  
+49999 50000 8.466e-15 - 9.688e-15   - 1.954e-13 - 
+
+
+
+NO Coarse grid solver
+
+Creazione griglia.
+Inizializzazione sistema. 
+   Number of degrees of freedom in level 0 : 50000
+   Number of degrees of freedom in level 1 : 25001
+   Number of degrees of freedom in level 2 : 12502
+   Number of degrees of freedom in level 3 : 6252
+Assemblaggio sistema. 
+Risoluzione sistema. 
+   40 CG iterations needed to obtain convergence.
+ Tempo impiegato multigrid: 12.2412 secondi.
+   137 CG iterations needed to obtain convergence.
+ Tempo impiegato no multigrid: 2.37533 secondi.
+Scrittura output in corso. 
+cells dofs   u_L2_norm  u_Linfty_norm  u_H1_norm  
+49999 50000 8.595e-15 - 9.674e-15   - 2.096e-13 - 
