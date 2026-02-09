@@ -50,10 +50,13 @@ Graph::get_number_of_cells() {
 }
 
 Graph
-Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex_map, double coarsening_percentage) {
+Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex_map,
+  std::map<int, int> & coarse_to_fine_cell_map,
+  double coarsening_percentage,
+  const std::vector<double> & resistances) {
+
   Graph result;
 
-  std::vector<double> not_ordered_lengths;
   std::vector<double> lengths;
 
   std::ofstream out("a.txt");
@@ -63,10 +66,12 @@ Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex
   }
   out.close();
 
+  int current_cell = 0;
   for (const auto & cell : cells) {
-    double cell_length = (points[cell.vertices[1]] - points[cell.vertices[0]]).norm_square();
-    lengths.push_back(cell_length);
-    not_ordered_lengths.push_back(cell_length);
+    if (adiacency[cell.vertices[1]].size() > 1 && adiacency[cell.vertices[0]].size() > 1 ) {
+      lengths.push_back(resistances[current_cell]);
+    }
+    current_cell++;
   }
 
   std::sort(lengths.begin(), lengths.end(), [](const double & a, const double & b) {
@@ -81,7 +86,7 @@ Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex
 
   unsigned int n_cells = cells.size();
 
-  double median = lengths[(n_cells - 1) * coarsening_percentage];
+  double median = lengths[(lengths.size() - 1) * coarsening_percentage] + 0.00001;
 
   std::map<int, int> fine_to_coarse_vertex_map;
 
@@ -129,7 +134,9 @@ Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex
         if (!visited_cell[to_visit_cell]) {
           int other_vertex_cell = cells[to_visit_cell].vertices[1]+cells[to_visit_cell].vertices[0] - visiting_vertex;
 
-          if (not_ordered_lengths[to_visit_cell] < median /*&& adiacency[other_vertex_cell].size() > 1*/) {
+          if (resistances[to_visit_cell] < median 
+              && adiacency[other_vertex_cell].size() > 1 && adiacency[visiting_vertex].size() > 1
+              && visiting_vertex != 0 ) {
             short_mode = true;
             break;
           }
@@ -148,7 +155,9 @@ Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex
 
       if (!visited_cell[to_visit_cell]) {
 
-        if (short_mode && not_ordered_lengths[to_visit_cell] < median /*&& adiacency[other_vertex_cell].size() > 1*/) {
+        if (short_mode && resistances[to_visit_cell] < median 
+            && adiacency[other_vertex_cell].size() > 1 && adiacency[visiting_vertex].size() > 1
+            && visiting_vertex != 0) {
           to_visit_short_vertices.push(other_vertex_cell);
         }
         else {
@@ -207,12 +216,23 @@ Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex
 
   //Creo le celle
   {
+    int current_fine_cell = 0;
+    int current_coarse_cell = 0;
+
     for (const auto & cell : cells) 
     {
+
       if ( fine_to_coarse_vertex_map[cell.vertices[0]] != fine_to_coarse_vertex_map[cell.vertices[1]]) {
         result.add_cell(fine_to_coarse_vertex_map[cell.vertices[0]], fine_to_coarse_vertex_map[cell.vertices[1]]);
+
+        coarse_to_fine_cell_map[current_coarse_cell] = current_fine_cell;
+        current_coarse_cell++;
+
       }
+      current_fine_cell++;
+
     }
+
   }
 
   return result;

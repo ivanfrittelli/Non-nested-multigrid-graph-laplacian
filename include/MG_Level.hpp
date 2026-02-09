@@ -46,13 +46,17 @@ class MG_Level {
       dof_handler(triangulation),
       fe(fe_degree),
       graph(graph),
-      id(id) {}
+      id(id)
+    {}
       
     void 
     make_grid();
 
     void
-    setup_system(const Function<3> & boundary_conditions);
+    set_inlet_dof(int i_dof);
+
+    void
+    setup_system(const Function<3> & boundary_conditions, double inlet_pressure);
 
     void
     assemble_system();
@@ -72,12 +76,13 @@ class MG_Level {
     FE_Q<1,3>          fe;
     DoFHandler<1,3>    dof_handler;
 
+    int inlet_dof;
+    Vector<double> resistances;
+
     AffineConstraints<double> constraints;
     
     SparsityPattern      sparsity_pattern;
     SparseMatrix<double> system_matrix;
-
-
 
     int id;
 };

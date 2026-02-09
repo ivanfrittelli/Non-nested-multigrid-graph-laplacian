@@ -6,6 +6,7 @@ cmake_minimum_required(VERSION 3.13.4)
 
 # Set the name of the project and target:
 set(TARGET "main")
+set(DEAL_II_DIR "/home/unipi/i.frittelli/Desktop/dealii-9.7.1/build")
 
 # Declare source files
 set(TARGET_SRC
@@ -37,8 +38,6 @@ target_include_directories(${TARGET}
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-set(CMAKE_CXX_COMPILER mpicxx)
 
 deal_ii_initialize_cached_variables()
 project(${TARGET})

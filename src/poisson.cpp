@@ -77,22 +77,75 @@ Poisson::make_grid()
     fine_graph.add_cell(node1, node2);
   }
 
+  double radius;
+  std::vector<double> radii;
+  std::vector<double> path_distance;
+
+  for (unsigned int i = 0; i < n_points; i++) {
+    in >> radius;
+
+    path_distance.push_back(radius);
+  }
+
+  for (unsigned int i = 0; i < n_points; i++) {
+    in >> radius;
+
+    radii.push_back(radius);
+  }
+
   if (par.graph_refining > 0) {
     fine_graph = fine_graph.get_finer_graph(par.graph_refining);
   }
 
   mg_levels.push_back(std::make_shared<MG_Level>(fine_graph, par.fe_degree, 0));
   mg_levels[0] -> make_grid();
+  mg_levels[0] -> resistances = Vector<double>(fine_graph.get_number_of_cells());
+
+  std::vector<double> cell_radii;
+
+  double viscosity = 1;
+  for (int k = 0; k < mg_levels[0] -> resistances.size(); k++) {
+    int fist_point_index = fine_graph.cells[k].vertices[1];
+    int second_point_index = fine_graph.cells[k].vertices[0];
+
+    double vessel_radius = (radii[fist_point_index] + radii[second_point_index])/2;
+    double vessel_length = (fine_graph.points[fist_point_index] - fine_graph.points[second_point_index]).norm();
+    cell_radii.push_back(-path_distance[fist_point_index]/2 - path_distance[second_point_index]/2);
+
+    //Poeissule law
+    double resistance = (8 * vessel_length * viscosity) / (3.1415 * std::pow(vessel_radius, 4));
+
+    //double resistance = vessel_length;
+
+    mg_levels[0] -> resistances[k] = resistance;
+    //std::cout<<mg_levels[0] -> resistances[k] << " ";
+  }
+
+  //std::cout<<"\n";
   
   std::vector<std::map<int, std::vector<int>>> coarse_to_fine_vertex_maps;
 
   for (int i = 1; i < par.n_v_cycles; i++) {
     std::map<int, std::vector<int>> coarse_to_fine_vertex_map;
 
-    Graph coarse_graph = mg_levels[i-1] -> graph.get_coarser_graph(coarse_to_fine_vertex_map, par.coarsening_percentage);
+    std::map<int, int> coarse_to_fine_cell_map;
+
+    Graph coarse_graph = mg_levels[i-1] -> graph.get_coarser_graph(
+      coarse_to_fine_vertex_map, 
+      coarse_to_fine_cell_map, 
+      par.coarsening_percentage,
+    cell_radii);
 
     mg_levels.push_back(std::make_shared<MG_Level>(coarse_graph, par.fe_degree, i));
     mg_levels[i] -> make_grid();
+    mg_levels[i] -> resistances = Vector<double>(coarse_graph.get_number_of_cells());
+
+    for (int k = 0; k < mg_levels[i] -> resistances.size(); k++) {
+      mg_levels[i] -> resistances[k] = mg_levels[i-1] -> resistances[coarse_to_fine_cell_map[k]];
+      //std::cout<<mg_levels[i] -> resistances[k] << " ";
+
+    }
+
 
     coarse_to_fine_vertex_maps.push_back(coarse_to_fine_vertex_map);
   }
@@ -150,6 +203,8 @@ Poisson::make_grid()
     std::map<int, int> vertex_to_dof_fine_map = mg_levels[i] ->get_vertex_to_dof_map();
     std::map<int, int> dof_to_vertex_coarse_map = mg_levels[i+1] -> get_dof_to_vertex_map();
 
+    mg_levels[i] -> set_inlet_dof(vertex_to_dof_fine_map[0]);
+
     //coarse_to_fine_dof_map = dof_to_vertex_coarse_map \circ coarse_to_fine_vertex_map \circ vertex_to_dof_fine_map
     for (const auto & [c_dof, c_vert] : dof_to_vertex_coarse_map) {
       for (const auto & f_vert : coarse_to_fine_vertex_maps[i][c_vert]) {
@@ -159,6 +214,9 @@ Poisson::make_grid()
 
     coarse_to_fine_dof_maps.push_back(coarse_to_fine_dof_map);
   }
+
+  std::map<int, int> vertex_to_dof_fine_map = mg_levels[par.n_v_cycles-1] ->get_vertex_to_dof_map();
+  mg_levels[par.n_v_cycles-1] -> set_inlet_dof(vertex_to_dof_fine_map[0]);
 
   /*
   std::cout << "   Number of active cells: " << triangulation.n_active_cells()
@@ -173,10 +231,10 @@ Poisson::make_grid()
 void
 Poisson::setup_system()
 {
-  mg_levels[0] -> setup_system(par.exact_solution);
+  mg_levels[0] -> setup_system(par.exact_solution, par.inlet_pressure);
 
   for (int i = 1; i < mg_levels.size(); i++) {
-    mg_levels[i] -> setup_system(Functions::ZeroFunction<3>());
+    mg_levels[i] -> setup_system(Functions::ZeroFunction<3>(), 0);
   }
 
   solution.reinit(mg_levels[0] -> dof_handler.n_dofs());
@@ -210,6 +268,11 @@ Poisson::solve()
   SolverControl            solver_control(1000, 1e-12);
   SolverCG<Vector<double>> solver(solver_control);
 
+  //std::cout << system_rhs << "\n";
+
+  //my_preconditioner.vmult(solution, system_rhs);
+  //mg_levels[0] -> constraints.distribute(solution);
+
   solver.solve(mg_levels[0] -> system_matrix, solution, system_rhs, my_preconditioner);
   mg_levels[0] -> constraints.distribute(solution);
       
@@ -220,7 +283,7 @@ Poisson::solve()
 
   tim.restart();
 
-  PreconditionJacobi<SparseMatrix<double>> preconditioner;
+  PreconditionSSOR<SparseMatrix<double>> preconditioner;
   preconditioner.initialize(mg_levels[0] -> system_matrix);
 
   SolverControl            solver_control_2(1000, 1e-12);
@@ -229,8 +292,26 @@ Poisson::solve()
   solver_2.solve(mg_levels[0] -> system_matrix, no_mg_solution, system_rhs, preconditioner);
   mg_levels[0] -> constraints.distribute(no_mg_solution);
 
+  std::ofstream out("fluxes.txt");
+
+  for(const auto & cell : mg_levels[0] -> dof_handler.active_cell_iterators()) {
+    int dof1 = cell -> vertex_dof_index(0, 0);
+    int dof2 = cell -> vertex_dof_index(1, 0);
+
+    if (cell-> face(0) -> at_boundary()) continue;
+    if (cell-> face(1) -> at_boundary()) continue;
+
+    out<<std::abs(no_mg_solution[dof1] - no_mg_solution[dof2]) << "\n";
+  }
+
+  out.close();
+
+
   std::cout << "   " << solver_control_2.last_step()
             << " CG iterations needed to obtain convergence." << std::endl;
+
+            //std::cout<< no_mg_solution << "\n";
+            //std::cout<< solution << "\n";
 
   std::cout<<" Tempo impiegato no multigrid: " << tim.stop() << " secondi.\n";
 

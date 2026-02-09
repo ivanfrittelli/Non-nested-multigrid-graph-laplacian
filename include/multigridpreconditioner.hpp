@@ -157,6 +157,9 @@ class MultigridPreconditioner {
 
 #include "MG_Level.hpp"
 #include <boost/serialization/smart_cast.hpp>
+#include <cmath>
+#include <deal.II/lac/linear_operator.h>
+#include <deal.II/lac/linear_operator_tools.h>
 
 template <typename VectorType>
 class MultigridPreconditioner {
@@ -179,6 +182,8 @@ class MultigridPreconditioner {
 
       preconditioners.resize(mg_levels.size() - 1);
 
+      a_coarses.push_back(linear_operator(mg_levels[0] -> system_matrix));
+
       for (unsigned int i = 0; i < mg_levels.size() - 1; i++) {
         auto a_fine = linear_operator(mg_levels[i] -> system_matrix);
         auto id_fine = identity_operator(a_fine);
@@ -192,6 +197,8 @@ class MultigridPreconditioner {
         restriction.vmult = [&, i](Vector<double> &dst, const Vector<double> &src) {
           dst.reinit(dofs[i+1]);
           dst = 0;
+
+          int max = 0;
           
           for (const auto& [key, value] : coarse_to_fine_dof_maps[i]) {
             //La media del valore dei vertici che sono stati collassati
@@ -199,17 +206,13 @@ class MultigridPreconditioner {
             double result = 0;
            
             for (unsigned int j = 0; j < value.size(); j++) {
-
               result += src[value[j]];
             }
 
-            result /= double(value.size());
+            if (value.size() > max) max = value.size();
 
-            dst[key] = result;         
-
-
+            dst[key] = result;    
           }
-          
         };
         restriction.reinit_range_vector = [&](Vector<double> &v, bool) {
           v.reinit(dofs[i+1]);
@@ -230,7 +233,7 @@ class MultigridPreconditioner {
           for (const auto& [c_dof, f_dof] : coarse_to_fine_dof_maps[i]) {
             
             for (unsigned int j = 0; j < f_dof.size(); j++) {
-              dst[f_dof[j]] = src[c_dof]/f_dof.size(); //Trasposta
+              dst[f_dof[j]] = src[c_dof]; //Trasposta
             }
           }
 
@@ -245,7 +248,10 @@ class MultigridPreconditioner {
         prolongations.push_back(prolongation);
         restrictions.push_back(restriction);
 
+        //a_coarses.push_back(restrictions[i] * a_coarses[i] * prolongations[i]);
+      
       }
+
 
       x.resize(mg_levels.size());
       residual.resize(mg_levels.size());
@@ -258,18 +264,32 @@ class MultigridPreconditioner {
         rhs[i].reinit(dofs[i]);
         coarse_grid_corrections[i].reinit(dofs[i]);
       }
-
-      if (coarse_cg_tollerance < 2e-12) {
-        solver2.initialize(mg_levels[mg_levels.size()-1] -> system_matrix);
+      
+      /*
+            for (int k = 0; k < 2; k++)
+      for (int i = 0; i < dofs[k]; i++) {
+        for (int j = 0; j < dofs[k]; j++) {
+          std::cout << mg_levels[k] -> system_matrix.el(i,j) << " ";
+        }
+        std::cout << "\n";
       }
 
+      Vector<double> e1(dofs[0]);
+      Vector<double> e2(dofs[1]);
+
+      for (int i = 0; i < dofs[0]; i++) {
+        if (i > 0) e1[i-1] = 0;
+        e1[i] = 1;
+
+        restrictions[0].vmult(e2, e1);
+        std::cout<<e2 << "\n";
+      }*/
     }
 
     void vmult(VectorType &my_dst,
               const VectorType &my_src) const
     {
       my_dst = 0;
-
 
       for (unsigned int i = 0; i < mg_levels.size(); i++) {
         x[i] = 0;
@@ -282,36 +302,35 @@ class MultigridPreconditioner {
 
       rhs[0] = my_src;
 
+      //std::cout<<rhs[0]<<"\n";
+
       for (unsigned int k = 0; k < n_of_levels - 1; k++) {
 
         //Pre smoothing
-        for (unsigned int i = 0; i < n_pre_smoothing; i++)
+        for (unsigned int i = 0; i < n_pre_smoothing * (n_of_levels-1-k)  ; i++)
         {
+          //residual[k] =  rhs[k] - a_coarses[k]*x[k];
+
           mg_levels[k] -> system_matrix.residual(residual[k], x[k], rhs[k]);
 
           smoothers[k].vmult_add(x[k], residual[k]);
         }
+        //residual[k] =  rhs[k] - a_coarses[k]*x[k];
 
         mg_levels[k] -> system_matrix.residual(residual[k], x[k], rhs[k]);
 
         //std::cout<< residual[k] << "\n";
-        
+
         //Restriction (Il residuo del livello k diventa l'rhs del livello k+1)
         restrictions[k].vmult(rhs[k+1], residual[k]);
-
         //std::cout<< rhs[k+1] << "\n";
       }
 
-      if (coarse_cg_tollerance < 2e-12) {
-        solver2.vmult(x[n_of_levels-1], rhs[n_of_levels-1]);
-      }
-      else {
-        //Coarse solver
-        solver.solve(mg_levels[n_of_levels-1] -> system_matrix, x[n_of_levels-1], rhs[n_of_levels-1], PreconditionIdentity());
-      }
+      solver.solve(mg_levels[n_of_levels-1] -> system_matrix, x[n_of_levels-1], rhs[n_of_levels-1], PreconditionIdentity());
       mg_levels[n_of_levels-1] -> constraints.distribute(x[n_of_levels-1]);
-
       //std::cout<< x[n_of_levels-1] << "\n";
+      //std::cout<< rhs[n_of_levels-1] << "\n";
+
 
       for (int k = n_of_levels - 2; k >= 0; k--) {
 
@@ -319,15 +338,15 @@ class MultigridPreconditioner {
 
         //std::cout<< coarse_grid_corrections[k] << "\n";
 
-
         //mg_levels[k] -> constraints.distribute(x[k]);
 
         x[k] += coarse_grid_corrections[k];
 
         //Post smoothing
-        for (unsigned int i = 0; i < n_post_smoothing; i++)
+        for (unsigned int i = 0; i < n_post_smoothing * (n_of_levels-1-k) ; i++)
         {
           // Start with the residual
+          //residual[k] =  rhs[k]radius - a_coarses[k]*x[k];
           mg_levels[k] -> system_matrix.residual(residual[k], x[k], rhs[k]);
 
           smoothers[k].vmult_add(x[k], residual[k]);
@@ -356,6 +375,7 @@ class MultigridPreconditioner {
 
       std::vector<LinearOperator<Vector<double>>> prolongations;
       std::vector<LinearOperator<Vector<double>>> restrictions;
+      std::vector<LinearOperator<Vector<double>>> a_coarses;
 
       std::vector<PreconditionJacobi<SparseMatrix<double>>> preconditioners;
       std::vector<LinearOperator<Vector<double>>> smoothers;

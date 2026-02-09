@@ -56,6 +56,11 @@ struct PoissonParameters
       prm.add_parameter("Initial refinement", initial_refinement);
       prm.add_parameter("Number of cycles", n_cycles);
       prm.add_parameter("Exact solution expression", exact_solution_expression);
+
+      prm.add_parameter("Inlet pressure", inlet_pressure);
+      prm.add_parameter("Inlet dof", inlet_dof);
+      prm.add_parameter("Outlet pressure", outlet_pressure);
+
       prm.add_parameter("Right hand side expression", rhs_expression);
       prm.add_parameter("Neumann boundary expression", neumann_expression);
       prm.add_parameter("Neumann boundary ids", neumann_boundary_ids);
@@ -107,6 +112,11 @@ struct PoissonParameters
   double omega                           = 0.7;
   double coarse_cg_tollerance            = 1e-12;
   double coarsening_percentage           = 0.5;
+
+  unsigned int inlet_dof = 0;
+  double inlet_pressure = 2;
+
+  int outlet_pressure = 1;
 
   int graph_refining                     = 0;
 

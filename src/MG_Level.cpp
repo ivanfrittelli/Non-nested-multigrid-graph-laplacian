@@ -3,29 +3,41 @@
 #include <iostream>
 
 void
+MG_Level::set_inlet_dof(int i_dof) {
+  inlet_dof = i_dof;
+}
+
+void
 MG_Level::make_grid() {
   triangulation = graph.create_graph_triangulation(); 
   dof_handler.distribute_dofs(fe);
 }
 
 void
-MG_Level::setup_system(const Function<3> & boundary_conditions) {
+MG_Level::setup_system(const Function<3> & boundary_conditions, double inlet_pressure) {
   std::cout << "   Number of degrees of freedom in level " << id << " : " << dof_handler.n_dofs()
             << std::endl;
 
+
   constraints.clear();
-    
+      
   for (int i = 0; i < 2; i++)
-    for (const auto &cell : triangulation.active_cell_iterators())
+    for (const auto &cell : triangulation.active_cell_iterators()) 
       if (cell-> face(i) -> at_boundary()) {
         cell -> face(i) -> set_boundary_id(0);
       }
 
 
+  std::cout << "   Number of not boundary degrees of freedom in level " << id << " : " << dof_handler.n_dofs() - dof_handler.n_boundary_dofs({0})
+            << std::endl;
+
   VectorTools::interpolate_boundary_values(dof_handler,
                                             0,
                                             boundary_conditions,
                                             constraints);
+
+  constraints.add_line(inlet_dof);
+  constraints.set_inhomogeneity(inlet_dof, inlet_pressure);
 
   DoFTools::make_hanging_node_constraints(dof_handler, constraints);
   constraints.close();
@@ -35,6 +47,8 @@ MG_Level::setup_system(const Function<3> & boundary_conditions) {
   sparsity_pattern.copy_from(dsp);
 
   system_matrix.reinit(sparsity_pattern);
+
+  
 }
 
 void
@@ -52,6 +66,7 @@ MG_Level::assemble_system() {
 
   std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
+  int current_cell = 0;
   for (const auto &cell : dof_handler.active_cell_iterators())
     {
       fe_values.reinit(cell);
@@ -62,6 +77,7 @@ MG_Level::assemble_system() {
           {
             for (const unsigned int j : fe_values.dof_indices())
               cell_matrix(i, j) +=
+                (cell -> diameter() / resistances[current_cell]) *
                 (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
                  fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
                  fe_values.JxW(q_index));           // dx
@@ -71,7 +87,18 @@ MG_Level::assemble_system() {
 
       constraints.distribute_local_to_global(
         cell_matrix, local_dof_indices, system_matrix);
+
+      current_cell++;
     }
+
+    /*
+        for (int i = 0; i < dof_handler.n_dofs(); i++) {
+      for (int j = 0; j < dof_handler.n_dofs(); j++) {
+        std::cout<<system_matrix.el(i,j) << " ";
+      }
+      std::cout<<"\n";
+    }
+      */
 }
 
 void
@@ -90,6 +117,7 @@ MG_Level::assemble_system(const FunctionParser<3> & rhs_function, Vector<double>
 
   std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
+  int current_cell = 0;
   for (const auto &cell : dof_handler.active_cell_iterators())
     {
       fe_values.reinit(cell);
@@ -101,12 +129,14 @@ MG_Level::assemble_system(const FunctionParser<3> & rhs_function, Vector<double>
           {
             for (const unsigned int j : fe_values.dof_indices())
               cell_matrix(i, j) +=
+                (cell -> diameter() / resistances[current_cell]) *
                 (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
                  fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
                  fe_values.JxW(q_index));           // dx
 
             const auto &x_q = fe_values.quadrature_point(q_index);
-            cell_rhs(i) += (fe_values.shape_value(i, q_index) * // phi_i(x_q)
+            cell_rhs(i) += (i == inlet_dof ? 1:0)*
+                            (fe_values.shape_value(i, q_index) * // phi_i(x_q)
                             rhs_function.value(x_q) *       // f(x_q)
                             fe_values.JxW(q_index));            // dx
           }
@@ -115,7 +145,18 @@ MG_Level::assemble_system(const FunctionParser<3> & rhs_function, Vector<double>
 
       constraints.distribute_local_to_global(
         cell_matrix, cell_rhs, local_dof_indices, system_matrix, rhs);
+
+      current_cell++;
+
     }
+/*
+    for (int i = 0; i < dof_handler.n_dofs(); i++) {
+      for (int j = 0; j < dof_handler.n_dofs(); j++) {
+        std::cout<<system_matrix.el(i,j) << " ";
+      }
+      std::cout<<"\n";
+    }*/
+
 }
 
 std::map<int, int>
