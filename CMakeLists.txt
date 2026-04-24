@@ -15,6 +15,7 @@ set(TARGET_SRC
   src/MG_Level.cpp
   src/multigridpreconditioner.cpp
   src/poisson.cpp
+  src/vtk_utils.cc
 )
 
 # --- Deal.II setup ---

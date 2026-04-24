@@ -48,7 +48,7 @@ using namespace dealii;
 
 struct PoissonParameters
 {
-  PoissonParameters()
+  PoissonParameters() : transport_field(3)
   {
     prm.enter_subsection("Poisson parameters");
     {
@@ -56,6 +56,7 @@ struct PoissonParameters
       prm.add_parameter("Initial refinement", initial_refinement);
       prm.add_parameter("Number of cycles", n_cycles);
       prm.add_parameter("Exact solution expression", exact_solution_expression);
+      prm.add_parameter("Initial solution", initial_solution_expression);
 
       prm.add_parameter("Inlet pressure", inlet_pressure);
       prm.add_parameter("Inlet dof", inlet_dof);
@@ -73,6 +74,17 @@ struct PoissonParameters
       prm.add_parameter("Coarseing percentage", coarsening_percentage);
       prm.add_parameter("Coarseing percentage", coarsening_percentage);
       prm.add_parameter("Graph refining", graph_refining);
+      prm.add_parameter("Initial coarsening", initial_coarsening);
+      prm.add_parameter("Only One", only_one);
+      prm.add_parameter("Multigrid it", n_multigrid_it);
+
+      prm.add_parameter("Compute no mg solution", compute_no_mg_solution);
+
+      prm.add_parameter("Time steps", time_steps);
+      prm.add_parameter("Time step length", time_step_length);
+      prm.add_parameter("Theta", theta);
+
+      prm.add_parameter("Resistance constant", resistance_constant);
     }
     prm.leave_subsection();
 
@@ -101,6 +113,10 @@ struct PoissonParameters
     neumann_function.initialize(FunctionParser<3>::default_variable_names(),
                                 {neumann_expression},
                                 constants);
+    initial_solution.initialize(FunctionParser<3>::default_variable_names(),
+                                {initial_solution_expression},
+                                constants);
+
   }
   unsigned int fe_degree                 = 1;
   unsigned int initial_refinement        = 3;
@@ -112,11 +128,22 @@ struct PoissonParameters
   double omega                           = 0.7;
   double coarse_cg_tollerance            = 1e-12;
   double coarsening_percentage           = 0.5;
+  double resistance_constant = 0;
+  bool only_one = true;
 
   unsigned int inlet_dof = 0;
   double inlet_pressure = 2;
 
   int outlet_pressure = 1;
+  int n_multigrid_it = 1;
+  int initial_coarsening = 1;
+
+  bool compute_no_mg_solution = true;
+
+  //Time
+  int time_steps = -1;
+  double time_step_length = 0.1;
+  double theta = 0;
 
   int graph_refining                     = 0;
 
@@ -125,9 +152,12 @@ struct PoissonParameters
   std::string  exact_solution_expression = "cos(pi*x)*cos(pi*y)";
   std::string  rhs_expression            = "2*pi*pi*cos(pi*x)*cos(pi*y)";
   std::string  neumann_expression        = "cos(2*pi*x)";
+  std::string initial_solution_expression = "0";
   std::set<types::boundary_id> neumann_boundary_ids = {};
 
+  FunctionParser<3> transport_field;
   FunctionParser<3> exact_solution;
+  FunctionParser<3> initial_solution;
   FunctionParser<3> rhs_function;
   FunctionParser<3> neumann_function;
 
@@ -166,7 +196,12 @@ private:
   Vector<double> system_rhs;
 
   std::vector<std::shared_ptr<MG_Level>> mg_levels;
-  std::vector<std::map<int, std::vector<int>>> coarse_to_fine_dof_maps;
+  std::vector<std::map<int, int>> coarse_to_fine_dof_maps;
 
-  DataOut<1,3> data_out;
+  //l'i-esimo va da livello[i+1] a livello[i]
+  std::vector<std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>>> not_trivial_prolongations_dof;
+
+  std::vector<DynamicSparsityPattern> prolongation_dynamic_patterns;
+  std::vector<SparsityPattern> prolongation_sparsity_patterns;
+  std::vector<SparseMatrix<double>> prolongations;
 };

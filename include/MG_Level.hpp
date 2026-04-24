@@ -39,6 +39,12 @@
 
 using namespace dealii;
 
+struct TimeInfo {
+  double dt;
+  double theta;
+};
+
+
 class MG_Level {
 
   public:
@@ -56,13 +62,16 @@ class MG_Level {
     set_inlet_dof(int i_dof);
 
     void
-    setup_system(const Function<3> & boundary_conditions, double inlet_pressure);
+    setup_system(const Function<3> & boundary_conditions);
 
     void
-    assemble_system();
+    assemble_system(const TimeInfo & time_info);
 
     void
-    assemble_system(const FunctionParser<3> & rhs_function, Vector<double> & rhs);
+    assemble_rhs(const FunctionParser<3> & rhs_function, Vector<double> & rhs, 
+      const Vector<double> & old_solution, 
+      const TimeInfo & time_info,
+      double inlet_flow);
 
     std::map<int, int> 
     get_dof_to_vertex_map();

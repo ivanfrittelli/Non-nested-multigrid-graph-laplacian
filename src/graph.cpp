@@ -1,5 +1,6 @@
 #include "../include/graph.hpp"
 
+#include <deal.II/base/exceptions.h>
 #include <fstream>
 
 #include<stack>
@@ -25,9 +26,22 @@ Graph::add_cell(int node1, int node2) {
 
   adiacency[node1].push_back(cells.size());
   adiacency[node2].push_back(cells.size());
-
+  
   cells.push_back(cell);
 } 
+
+void 
+Graph::add_big_cell(int node1, int node2, int cell_start, int cell_end, int n_of_cells) {
+  BigCell big_cell;
+
+  big_cell.node1 = node1;
+  big_cell.node2 = node2;
+  big_cell.cell_start = cell_start;
+  big_cell.cell_end = cell_end;
+  big_cell.n_of_cells = n_of_cells;
+
+  big_cells.push_back(big_cell);
+}
 
 
 Triangulation<1, 3>
@@ -86,7 +100,7 @@ Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex
 
   unsigned int n_cells = cells.size();
 
-  double median = lengths[(lengths.size() - 1) * coarsening_percentage] + 0.00001;
+  double median = lengths[(lengths.size() - 1) * coarsening_percentage] *1.00001;
 
   std::map<int, int> fine_to_coarse_vertex_map;
 
@@ -212,7 +226,6 @@ Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex
       
     }
   }
-  
 
   //Creo le celle
   {
@@ -233,6 +246,134 @@ Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex
 
     }
 
+  }
+
+  return result;
+}
+
+
+Graph
+Graph::get_coarser_graph_lort(std::map<int, int> & coarse_to_fine_vertex_map, 
+  std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>> & not_trivial_prolongation) {
+
+  Graph result;
+  
+  std::map<int, int> fine_to_coarse_vertex_map;
+
+  bool no_remove = false;
+
+  int i = 0;
+
+  for(const auto & big_cell : big_cells) {
+    int n_coarse_cell = 0;
+    int coarse_cell_start = -1;
+    int coarse_cell_end = -1;
+
+    i++;
+    //std::cout<<i<<"\n";
+    
+    if(big_cell.n_of_cells <= 5 && big_cell.node1 == big_cell.node2)
+    {
+      no_remove = true;
+    }
+    else
+    {
+      no_remove = false;
+    }
+
+    //Se il primo vertice non è presente, lo aggiungo
+    if (fine_to_coarse_vertex_map.count(big_cell.node1) == 0) {
+      result.add_point(points[big_cell.node1]);
+      fine_to_coarse_vertex_map[big_cell.node1] = result.points.size()-1;
+
+      coarse_to_fine_vertex_map[result.points.size()-1] = big_cell.node1;
+    }
+
+    int to_remove = 0;
+    int last_hold_vertex = big_cell.node1;
+
+    int current_vertex = big_cell.node1;
+    int current_cell = big_cell.cell_start;
+
+    //Finché non arrivo alla fine della big cell continuo a iterare
+    do {
+      //Cambio il vertice della cella
+      current_vertex = cells[current_cell].vertices[1] + cells[current_cell].vertices[0] - current_vertex;
+
+      if (current_vertex != big_cell.node2) {
+        //Cambia la rimozione
+        to_remove = 1-to_remove;
+
+        //Se non è da rimuovere (per alternamento o perché la cella è da non coarseare)
+        if (to_remove == 0 || no_remove) {  
+          //Aggiungi il punto
+          result.add_point(points[current_vertex]);
+          fine_to_coarse_vertex_map[current_vertex] = result.points.size() - 1;
+
+          coarse_to_fine_vertex_map[result.points.size()-1] = current_vertex;
+
+
+          //Aggiungi il collegamento con il punto precedente
+          result.add_cell(fine_to_coarse_vertex_map[last_hold_vertex], fine_to_coarse_vertex_map[current_vertex]);
+          if (coarse_cell_start < 0) {
+            coarse_cell_start = result.cells.size()-1;
+          }
+          
+          n_coarse_cell++;
+
+          last_hold_vertex = current_vertex;
+                                  if(last_hold_vertex == big_cell.node2) std::cout<<"AAA\n";
+
+        }
+        else {
+          //SE PROVO A FARE INVERSE SI ROMPE QUI
+          //b = 1/2 a + 1/2 c;
+          std::pair<int, double> left_vertex_pair;
+          int left_vertex = cells[adiacency[current_vertex][0]].vertices[0] + cells[adiacency[current_vertex][0]].vertices[1] - current_vertex;
+          left_vertex_pair.first = fine_to_coarse_vertex_map[left_vertex]; 
+
+          std::pair<int, double> right_vertex_pair;
+          int right_vertex = cells[adiacency[current_vertex][1]].vertices[0] + cells[adiacency[current_vertex][1]].vertices[1] - current_vertex;
+          if (right_vertex == big_cell.node2 && fine_to_coarse_vertex_map.count(big_cell.node2) != 0) 
+            right_vertex_pair.first = fine_to_coarse_vertex_map[big_cell.node2];
+          else
+            right_vertex_pair.first = result.points.size(); //Il punto che devo ancora aggiungere
+
+          double left_cell_length = (points[current_vertex] - points[left_vertex]).norm();
+          double right_cell_length = (points[current_vertex] - points[right_vertex]).norm();
+
+          left_vertex_pair.second = right_cell_length/(left_cell_length + right_cell_length);
+          right_vertex_pair.second = left_cell_length/(left_cell_length + right_cell_length);
+
+          not_trivial_prolongation[current_vertex] = std::make_pair(left_vertex_pair, right_vertex_pair);
+        }
+
+        //Cambia cella
+        current_cell = adiacency[current_vertex][0] +  adiacency[current_vertex][1] - current_cell;
+      }
+    } while(current_vertex != big_cell.node2);
+
+    //Se il secondo vertice non è presente, lo aggiungo
+    if (fine_to_coarse_vertex_map.count(big_cell.node2) == 0) {
+      result.add_point(points[big_cell.node2]);
+      fine_to_coarse_vertex_map[big_cell.node2] = result.points.size()-1;
+
+      coarse_to_fine_vertex_map[result.points.size()-1] = big_cell.node2;
+
+    }
+
+    //Devo creare il ponte tra l'ultimo vertice e il node2
+    result.add_cell(fine_to_coarse_vertex_map[last_hold_vertex], fine_to_coarse_vertex_map[big_cell.node2]);
+    coarse_cell_end = result.cells.size()-1;
+    n_coarse_cell++;
+
+    if (coarse_cell_start < 0) {
+      coarse_cell_start = result.cells.size()-1;
+    }
+
+    result.add_big_cell(fine_to_coarse_vertex_map[big_cell.node1], fine_to_coarse_vertex_map[big_cell.node2],
+      coarse_cell_start, coarse_cell_end,
+      n_coarse_cell);
   }
 
   return result;

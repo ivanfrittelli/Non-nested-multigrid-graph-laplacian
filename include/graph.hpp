@@ -4,7 +4,15 @@
 #include <deal.II/grid/tria_description.h>
 #include <deal.II/lac/vector.h>
 
+#include<map>
+
 using namespace dealii;
+
+struct BigCell{
+  int node1, node2;
+  int cell_start, cell_end;
+  int n_of_cells;
+};
 
 class Graph {
   public:
@@ -14,6 +22,7 @@ class Graph {
     void add_point(Point<3> point);
 
     void add_cell(int node1, int node2);
+    void add_big_cell(int node1, int node2, int cell_start, int cell_end, int n_of_cells);
 
     int get_number_of_points();
     int get_number_of_cells();
@@ -25,10 +34,16 @@ class Graph {
       std::map<int, int> & coarse_to_fine_cell_map, 
       double coarsening_percentage,
       const std::vector<double> & resistances);
+
+    Graph get_coarser_graph_lort(
+      std::map<int, int> & coarse_to_fine_vertex_map, std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>> & not_trivial_prolongation);
+
     Graph get_finer_graph(int n_of_points_per_segment);
 
     std::vector<Point<3>> points;
     std::vector<CellData<1>> cells;
 
+    std::vector<BigCell> big_cells;
+    
     std::vector<std::vector<int>> adiacency;    
 };
