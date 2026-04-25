@@ -4,10 +4,6 @@
 #include <deal.II/fe/fe_values.h>
 #include <iostream>
 
-void
-MG_Level::set_inlet_dof(int i_dof) {
-  inlet_dof = i_dof;
-}
 
 void
 MG_Level::make_grid() {
@@ -16,33 +12,49 @@ MG_Level::make_grid() {
 }
 
 void
+MG_Level::setup_boundary_conditions(const std::set<int> & dirichlet_cells, const std::set<int> & neumann_cells) {
+  for (int i = 0; i < 2; i++)
+    for (const auto &cell : triangulation.active_cell_iterators()) {
+        if (cell-> face(i) -> at_boundary()) {
+          if (dirichlet_cells.count(cell->active_cell_index()) > 0) {
+            cell -> face(i) -> set_boundary_id(2);
+          }
+          else if(neumann_cells.count(cell->active_cell_index()) > 0) {
+            cell -> face(i) -> set_boundary_id(1);
+          }
+          else {
+            cell -> face(i) -> set_boundary_id(0);
+          }
+        }
+      }
+}
+
+void
 MG_Level::setup_system(const Function<3> & boundary_conditions) {
   std::cout << "   Number of degrees of freedom in level " << id << " : " << dof_handler.n_dofs()
             << std::endl;
 
-
   constraints.clear();
-      
-  for (int i = 0; i < 2; i++)
-    for (const auto &cell : triangulation.active_cell_iterators()) {
-      if (cell-> face(i) -> at_boundary()) {
-        if (inlet_dof >= 0 && cell -> face(i) -> index() == inlet_dof) {
-          cell -> face(i) -> set_boundary_id(1);
-        }
-        else
-          cell -> face(i) -> set_boundary_id(0);
-      }
-    }
-      
-
-
-  std::cout << "   Number of not boundary degrees of freedom in level " << id << " : " << dof_handler.n_dofs() - dof_handler.n_boundary_dofs({0})
-            << std::endl;
 
   VectorTools::interpolate_boundary_values(dof_handler,
-                                            0,
-                                            boundary_conditions,
-                                            constraints);
+                                        2,
+                                        boundary_conditions,
+                                        constraints);
+
+  //Nodi staccati
+  VectorTools::interpolate_boundary_values(dof_handler,
+                                        0,
+                                        Functions::ZeroFunction<3>(),
+                                        constraints);
+      
+  //std::cout << "   Number of not dirichlet constrained degrees of freedom in level " << id << " : " << dof_handler.n_dofs() - dof_handler.n_boundary_dofs({0})
+  //          << std::endl;
+
+  
+  //std::cout<<"Dof vincolati:"<<"\n";
+  //std::cout<<dof_handler.n_boundary_dofs({0})<<"\n";
+  //std::cout<<dof_handler.n_boundary_dofs({1})<<"\n";
+  //std::cout<<dof_handler.n_boundary_dofs({2})<<"\n";
 
   DoFTools::make_hanging_node_constraints(dof_handler, constraints);
 
@@ -81,7 +93,7 @@ MG_Level::assemble_system(const TimeInfo & time_info) {
           {
             for (const unsigned int j : fe_values.dof_indices()) {
 
-              if (time_info.dt <= 0) {
+              if (!time_info.is_time_dependent) {
                 cell_matrix(i, j) +=
                   (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
                   fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
@@ -112,10 +124,13 @@ MG_Level::assemble_system(const TimeInfo & time_info) {
 
 void 
 MG_Level::assemble_rhs(const FunctionParser<3> & rhs_function,
-  Vector<double> & rhs, const Vector<double> & old_solution,
-  const TimeInfo & time_info,
-  double inlet_flow) 
+  Vector<double> & rhs, 
+  const FunctionParser<3> & neumann_function,
+  const Vector<double> & old_solution,
+  const TimeInfo & time_info) 
 {
+  rhs = 0;
+
   QGauss<1>     quadrature_formula(fe.degree + 1);
   QGauss<0> face_quadrature_formula(fe.degree + 1);
 
@@ -153,22 +168,27 @@ MG_Level::assemble_rhs(const FunctionParser<3> & rhs_function,
           {
             const auto &x_q = fe_values.quadrature_point(q_index);
 
-            if (time_info.dt <= 0) {
+            if (!time_info.is_time_dependent) {
               cell_rhs(i) += //(i == inlet_dof ? 1:0)*
                             (fe_values.shape_value(i, q_index) * // phi_i(x_q)
                             rhs_function.value(x_q) *       // f(x_q)
                             fe_values.JxW(q_index));            // dx
+
               for (const auto &f : cell->face_indices())
                 if (cell->face(f)->at_boundary() && cell->face(f)->boundary_id() == 1)
                   {
                     fe_face_values.reinit(cell, f);
 
                     for (const unsigned int q_index :
-                        fe_face_values.quadrature_point_indices())
-                      for (const unsigned int i : fe_face_values.dof_indices())
-                        cell_rhs(i) += fe_face_values.shape_value(i, q_index) * // phi_i(x_q)
-                          inlet_flow * // g(x_q)
-                          fe_face_values.JxW(q_index);                 // ds
+                        fe_face_values.quadrature_point_indices()) {
+                          const auto neumann_function_value = neumann_function.value(fe_face_values.quadrature_point(q_index));
+
+                          for (const unsigned int i : fe_face_values.dof_indices())
+                            cell_rhs(i) += fe_face_values.shape_value(i, q_index) * // phi_i(x_q)
+                              neumann_function_value * // g(x_q)
+                              fe_face_values.JxW(q_index);                 // ds
+                        }
+                      
                   }
             }
             else {
@@ -192,11 +212,15 @@ MG_Level::assemble_rhs(const FunctionParser<3> & rhs_function,
                     fe_face_values.reinit(cell, f);
 
                     for (const unsigned int q_index :
-                        fe_face_values.quadrature_point_indices())
-                      for (const unsigned int i : fe_face_values.dof_indices())
-                        cell_rhs(i) += time_info.dt * fe_face_values.shape_value(i, q_index) * // phi_i(x_q)
-                          inlet_flow * // g(x_q)
-                          fe_face_values.JxW(q_index);                 // ds
+                        fe_face_values.quadrature_point_indices()) {
+                          const auto neumann_function_value = neumann_function.value(fe_face_values.quadrature_point(q_index));
+
+                          for (const unsigned int i : fe_face_values.dof_indices())
+                            cell_rhs(i) += time_info.dt * fe_face_values.shape_value(i, q_index) * // phi_i(x_q)
+                              neumann_function_value * // g(x_q)
+                              fe_face_values.JxW(q_index);                 // ds
+                        }
+                      
                   }
             }
             

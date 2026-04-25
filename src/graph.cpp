@@ -376,6 +376,10 @@ Graph::get_coarser_graph_lort(std::map<int, int> & coarse_to_fine_vertex_map,
       n_coarse_cell);
   }
 
+  //Le big cell sono le stesse
+  result.dirichlet_big_cells = this -> dirichlet_big_cells;
+  result.neumann_big_cells = this -> neumann_big_cells;
+
   return result;
 }
 

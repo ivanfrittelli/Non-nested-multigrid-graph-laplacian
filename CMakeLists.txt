@@ -13,7 +13,6 @@ set(TARGET_SRC
   ${TARGET}.cpp
   src/graph.cpp
   src/MG_Level.cpp
-  src/multigridpreconditioner.cpp
   src/poisson.cpp
   src/vtk_utils.cc
 )

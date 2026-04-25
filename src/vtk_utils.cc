@@ -209,7 +209,7 @@ namespace VTKUtils
 
     // Read points
     vtkPoints                   *vtk_points = grid->GetPoints();
-    const vtkIdType              n_points   = only_one ? 47 : vtk_points->GetNumberOfPoints();
+    const vtkIdType              n_points   = only_one ? grid->GetCell(0)->GetNumberOfPoints() : vtk_points->GetNumberOfPoints();
 
     for (vtkIdType i = 0; i < n_points; ++i)
       {
@@ -264,6 +264,34 @@ namespace VTKUtils
             AssertThrow(false, ExcMessage("Unsupported dimension."));
           }
       }
+
+  }
+
+  void 
+  read_cell_label_graph(const std::string &vtk_filename,
+                        Graph & my_graph,
+                        const std::string &cell_data_name)
+  {
+    auto reader = vtkSmartPointer<vtkUnstructuredGridReader>::New();
+    reader->SetFileName(vtk_filename.c_str());
+    reader->Update();
+    vtkUnstructuredGrid *grid = reader->GetOutput();
+    AssertThrow(grid, ExcMessage("Failed to read VTK file: " + vtk_filename));
+    vtkDataArray *data_array =
+      grid->GetCellData()->GetArray(cell_data_name.c_str());
+    AssertThrow(data_array,
+                ExcMessage("Cell data array '" + cell_data_name +
+                          "' not found in VTK file: " + vtk_filename));
+    vtkIdType n_tuples     = data_array->GetNumberOfTuples();
+
+    for (vtkIdType i = 0; i < n_tuples; ++i) {
+        if(data_array->GetComponent(i, 0) == 1) {
+          my_graph.dirichlet_big_cells.push_back(i);
+        }
+        else if (data_array->GetComponent(i, 0) == 2) {
+          my_graph.neumann_big_cells.push_back(i);
+        }
+    }
 
   }
 

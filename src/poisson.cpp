@@ -17,7 +17,8 @@ Poisson::make_grid()
 
   Graph fine_graph;
 
-  VTKUtils::read_vtk_graph("Network1.vtk", fine_graph, par.only_one);
+  VTKUtils::read_vtk_graph(par.mesh_file_name, fine_graph, par.only_one);
+  VTKUtils::read_cell_label_graph(par.mesh_file_name, fine_graph, "labels");
 
   std::map<int, int> coarse_to_fine_vertex_mapl;
   std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>> not_trivial_prolongationl;
@@ -25,46 +26,14 @@ Poisson::make_grid()
   for (int i = 0; i < par.initial_coarsening; i++)
     fine_graph = fine_graph.get_coarser_graph_lort(coarse_to_fine_vertex_mapl, not_trivial_prolongationl);
 
-    /*
-  int min_p0;
-  int min_p1;
-  double min = 100;
-
-  for (int i = 0; i < fine_graph.get_number_of_cells(); i++) {
-    int p0 = fine_graph.cells[i].vertices[0];
-    int p1 = fine_graph.cells[i].vertices[1];
-
-    if(p0 == p1) std::cout<<"ERRORE!!!\n";
-
-    double cell_length = (fine_graph.points[p0] - fine_graph.points[p1]).norm();
-
-    if (cell_length < min) {
-      min = cell_length;
-      min_p0 = p0;
-      min_p1 = p1;
-    } 
-  }
-
-  std::cout<<"Il minimo è: " << min<<"\n";
-  std::cout << min_p0 << " " << min_p1 << "\n";
-*/
-
-  //Triangulation<1,3> my_tria = fine_graph.create_graph_triangulation();
-
-  /*
-  std::ofstream out("my_tria" + std::to_string(0) + ".vtk");
-  g_out.write_vtk(my_tria, out);
-  out.close();
-  */
-
-  mg_levels.push_back(std::make_shared<MG_Level>(fine_graph, par.fe_degree, 0));
+  mg_levels.push_back(std::make_shared<MG_Level>(fine_graph, 0));
   mg_levels[0] -> make_grid();
 
-  
   std::vector<std::map<int, int>> coarse_to_fine_vertex_maps;
   std::vector<std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>>> not_trivial_prolongations;
 
-  for (int i = 1; i < par.n_v_cycles; i++) {
+  //Creazione altri livelli
+  for (unsigned int i = 1; i < par.n_v_cycles; i++) {
     std::map<int, int> coarse_to_fine_vertex_map_lort;
     std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>> not_trivial_prolongation_lort;
 
@@ -75,14 +44,15 @@ Poisson::make_grid()
 
     std::cout<<tim.stop() <<"\n";
 
-    mg_levels.push_back(std::make_shared<MG_Level>(my_coarse_graph, par.fe_degree, i));
+    mg_levels.push_back(std::make_shared<MG_Level>(my_coarse_graph, i));
     mg_levels[i] -> make_grid();
 
     coarse_to_fine_vertex_maps.push_back(coarse_to_fine_vertex_map_lort);
     not_trivial_prolongations.push_back(not_trivial_prolongation_lort);
   }
 
-  for (int i = 0; i < par.n_v_cycles - 1; i++) {
+  //Impostazioni per mappa restriction e prolongation
+  for (unsigned int i = 0; i < par.n_v_cycles - 1; i++) {
     std::ofstream oout("AAA.txt");
 
     //Imposto la coarse to fine dof map
@@ -90,7 +60,7 @@ Poisson::make_grid()
     std::map<int, int> vertex_to_dof_fine_map = mg_levels[i] ->get_vertex_to_dof_map();
     std::map<int, int> dof_to_vertex_coarse_map = mg_levels[i+1] -> get_dof_to_vertex_map();
 
-    mg_levels[i] -> set_inlet_dof(i == 0 ? vertex_to_dof_fine_map[0] : -1);
+    //mg_levels[i] -> set_inlet_dof(i == 0 ? vertex_to_dof_fine_map[0] : -1);
 
     //coarse_to_fine_dof_map = dof_to_vertex_coarse_map \circ coarse_to_fine_vertex_map \circ vertex_to_dof_fine_map
     for (const auto & [c_dof, c_vert] : dof_to_vertex_coarse_map) {
@@ -122,11 +92,41 @@ Poisson::make_grid()
     not_trivial_prolongations_dof.push_back(not_trivial_prolongation_dof);
   }
 
+  //Boundary conditions
+  for (int i = 0; i < par.n_v_cycles; i++) {
+    std::set<int> dirichlet_cells, neumann_cells;
+
+    Graph * graph = &mg_levels[i] -> graph;
+
+    for (unsigned int j = 0; j < graph ->dirichlet_big_cells.size(); j++) {
+      auto big_cell = graph ->big_cells[graph ->dirichlet_big_cells[j]];
+      if (graph ->adiacency[big_cell.node1].size() == 1) {
+        dirichlet_cells.insert(graph ->adiacency[big_cell.node1][0]);
+      }
+      if (graph ->adiacency[big_cell.node2].size() == 1) {
+        dirichlet_cells.insert(graph ->adiacency[big_cell.node2][0]);
+      }
+    }
+
+    for (unsigned int j = 0; j < graph ->neumann_big_cells.size(); j++) {
+      auto big_cell = graph ->big_cells[graph ->neumann_big_cells[j]];
+      if (graph ->adiacency[big_cell.node1].size() == 1) {
+        neumann_cells.insert(graph ->adiacency[big_cell.node1][0]);
+      }
+      if (graph ->adiacency[big_cell.node2].size() == 1) {
+        neumann_cells.insert(graph ->adiacency[big_cell.node2][0]);
+      }
+    }
+    
+    mg_levels[i] -> setup_boundary_conditions(dirichlet_cells, neumann_cells);
+  }
+  
+
   prolongation_dynamic_patterns.resize(par.n_v_cycles - 1);
   prolongation_sparsity_patterns.resize(par.n_v_cycles - 1);
   prolongations.resize(par.n_v_cycles - 1);
 
-  for (int i = 0; i < par.n_v_cycles - 1; i++) {
+  for (unsigned int i = 0; i < par.n_v_cycles - 1; i++) {
     prolongation_dynamic_patterns[i].reinit(mg_levels[i] -> dof_handler.n_dofs(), mg_levels[i+1] -> dof_handler.n_dofs());
 
     for (const auto [key, value] : coarse_to_fine_dof_maps[i]) {
@@ -151,35 +151,17 @@ Poisson::make_grid()
     }
   }
 
-  /*
-  std::ofstream p("p.txt");
-  for (int i = 0; i < mg_levels[0] -> dof_handler.n_dofs(); i++) {
-    for (int j = 0; j < mg_levels[1] -> dof_handler.n_dofs(); j++) {
-      p << prolongation.el(i,j) << " "; 
-    }
-    p << "\n";
-  }
-  p.close();
-  */
 
-  std::map<int, int> vertex_to_dof_fine_map = mg_levels[par.n_v_cycles-1] ->get_vertex_to_dof_map();
-  mg_levels[par.n_v_cycles-1] -> set_inlet_dof(mg_levels.size() == 1 ? vertex_to_dof_fine_map[0] : -1);
+  //std::map<int, int> vertex_to_dof_fine_map = mg_levels[par.n_v_cycles-1] ->get_vertex_to_dof_map();
+  //mg_levels[par.n_v_cycles-1] -> set_inlet_dof(mg_levels.size() == 1 ? vertex_to_dof_fine_map[0] : -1);
 
-  for (int i = 0; i < mg_levels.size(); i++) {
+  for (unsigned int i = 0; i < mg_levels.size(); i++) {
     std::ofstream out("tria" + std::to_string(i) + ".vtk");
 
     g_out.write_vtk(mg_levels[i] -> triangulation, out);
 
     out.close();
   }
-  /*
-  std::cout << "   Number of active cells: " << triangulation.n_active_cells()
-            << std::endl
-            << "   Total number of cells: " << triangulation.n_cells()
-            << std::endl
-            << "   Total number of points: " << triangulation.n_faces()
-            << std::endl;
-  */
 }
 
 void
@@ -187,7 +169,7 @@ Poisson::setup_system()
 {
   mg_levels[0] -> setup_system(par.exact_solution);
 
-  for (int i = 1; i < mg_levels.size(); i++) {
+  for (unsigned int i = 1; i < mg_levels.size(); i++) {
     mg_levels[i] -> setup_system(Functions::ZeroFunction<3>());
   }
 
@@ -208,7 +190,7 @@ Poisson::assemble_system()
   time_info.dt = par.time_step_length;
   time_info.theta = par.theta;
 
-  for (int i = 0; i < par.n_v_cycles; i++) {
+  for (unsigned int i = 0; i < par.n_v_cycles; i++) {
     mg_levels[i] -> assemble_system(time_info);
   }
 }
@@ -222,6 +204,7 @@ Poisson::solve()
   time_info.dt = par.time_step_length;
   time_info.theta = par.theta;
 
+  //No mg solution compute only fist step (for time dependent problem).
   if (par.compute_no_mg_solution) {
     PreconditionSSOR<SparseMatrix<double>> preconditioner;
     preconditioner.initialize(mg_levels[0] -> system_matrix);
@@ -233,7 +216,7 @@ Poisson::solve()
 
     //mg_levels[0] -> constraints.print(std::cout);
 
-    mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, solution, time_info, par.inlet_pressure);
+    mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info);
 
     solver_2.solve(mg_levels[0] -> system_matrix, no_mg_solution, system_rhs, preconditioner);
     mg_levels[0] -> constraints.distribute(no_mg_solution);
@@ -243,7 +226,9 @@ Poisson::solve()
 
     std::cout<<" Tempo impiegato no multigrid: " << tim.stop() << " secondi.\n";
 
-    output_results(0);
+    //Altrimenti si stampa dopo insieme alla soluzione con mg
+    if (par.n_v_cycles <= 1)
+      output_results(0);
   }
 
   if (par.n_v_cycles > 1) { 
@@ -252,33 +237,24 @@ Poisson::solve()
     SolverControl            solver_control(1000, 1e-12);
     SolverCG<Vector<double>> solver(solver_control);
   
-
     MultigridPreconditioner<Vector<double>> my_preconditioner(mg_levels, coarse_to_fine_dof_maps, 
       not_trivial_prolongations_dof,
-      par.omega, par.coarse_cg_tollerance,
+      par.omega,
       par.n_pre_smoothing, par.n_post_smoothing, prolongations);
 
-      if (time_info.dt <= 0) {
-        mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, solution, time_info, par.inlet_pressure);
+      int i = 0;
+
+      //Con il ciclo scritto così, se non è time dependent esegue solo uno step, come giusto che sia
+      do {
+        mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function,solution, time_info);
 
         solver.solve(mg_levels[0] -> system_matrix, solution, system_rhs, my_preconditioner);
         mg_levels[0] -> constraints.distribute(solution);
 
-        output_results(0);
-      }
-      else {
+        output_results(i);
 
-        for (int i = 0; i < par.time_steps; i++) {
-          mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, solution, time_info, par.inlet_pressure);
-
-          solver.solve(mg_levels[0] -> system_matrix, solution, system_rhs, my_preconditioner);
-          mg_levels[0] -> constraints.distribute(solution);
-
-          output_results(i);
-        }
-
-      }
-
+        i++;
+      } while(i < par.time_steps && par.is_time_dependent);
     
     /*
     Vector<double> residue(mg_levels[0] -> dof_handler.n_dofs());
@@ -336,26 +312,23 @@ Poisson::output_results(const unsigned int cycle)
 void
 Poisson::run()
 {
-  for (unsigned int cycle = 0; cycle < par.n_cycles; ++cycle)
+  std::cout<<"Creazione griglia.\n";
+  make_grid();
+  /*
+  else
     {
-      std::cout<<"Creazione griglia.\n";
-      if (cycle == 0)
-        make_grid();
-      /*
-      else
-        {
-          triangulation.refine_global();
-        }
-      */
-      std::cout<<"Inizializzazione sistema. \n";
-
-      setup_system();
-      std::cout<<"Assemblaggio sistema. \n";
-
-      assemble_system();
-      std::cout<<"Risoluzione sistema. \n";
-
-      solve();
+      triangulation.refine_global();
     }
+  */
+  std::cout<<"Inizializzazione sistema. \n";
+
+  setup_system();
+  std::cout<<"Assemblaggio sistema. \n";
+
+  assemble_system();
+  std::cout<<"Risoluzione sistema. \n";
+
+  solve();
+    
   //par.convergence_table.output_table(std::cout);
 }

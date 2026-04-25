@@ -42,15 +42,16 @@ using namespace dealii;
 struct TimeInfo {
   double dt;
   double theta;
+  bool is_time_dependent;
 };
 
 
 class MG_Level {
 
   public:
-    MG_Level(Graph & graph, int fe_degree, int id): 
+    MG_Level(Graph & graph, int id): 
       dof_handler(triangulation),
-      fe(fe_degree),
+      fe(1),
       graph(graph),
       id(id)
     {}
@@ -59,7 +60,7 @@ class MG_Level {
     make_grid();
 
     void
-    set_inlet_dof(int i_dof);
+    setup_boundary_conditions(const std::set<int> & dirichlet_cells, const std::set<int> & neumann_cells);
 
     void
     setup_system(const Function<3> & boundary_conditions);
@@ -69,9 +70,9 @@ class MG_Level {
 
     void
     assemble_rhs(const FunctionParser<3> & rhs_function, Vector<double> & rhs, 
+      const FunctionParser<3> & neumann_function,
       const Vector<double> & old_solution, 
-      const TimeInfo & time_info,
-      double inlet_flow);
+      const TimeInfo & time_info);
 
     std::map<int, int> 
     get_dof_to_vertex_map();

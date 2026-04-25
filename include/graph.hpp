@@ -46,4 +46,7 @@ class Graph {
     std::vector<BigCell> big_cells;
     
     std::vector<std::vector<int>> adiacency;    
+
+    std::vector<int> dirichlet_big_cells;
+    std::vector<int> neumann_big_cells;
 };

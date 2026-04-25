@@ -48,43 +48,41 @@ using namespace dealii;
 
 struct PoissonParameters
 {
-  PoissonParameters() : transport_field(3)
+  PoissonParameters()
   {
-    prm.enter_subsection("Poisson parameters");
+    prm.enter_subsection("Time");
     {
-      prm.add_parameter("Finite element degree", fe_degree);
-      prm.add_parameter("Initial refinement", initial_refinement);
-      prm.add_parameter("Number of cycles", n_cycles);
-      prm.add_parameter("Exact solution expression", exact_solution_expression);
-      prm.add_parameter("Initial solution", initial_solution_expression);
-
-      prm.add_parameter("Inlet pressure", inlet_pressure);
-      prm.add_parameter("Inlet dof", inlet_dof);
-      prm.add_parameter("Outlet pressure", outlet_pressure);
-
-      prm.add_parameter("Right hand side expression", rhs_expression);
-      prm.add_parameter("Neumann boundary expression", neumann_expression);
-      prm.add_parameter("Neumann boundary ids", neumann_boundary_ids);
-      prm.add_parameter("Number of eigenvalues", n_of_eigenvalues);
-      prm.add_parameter("Number of V-cycles", n_v_cycles);
-      prm.add_parameter("Coarse CG tollerance", coarse_cg_tollerance);
-      prm.add_parameter("Omega", omega);
-      prm.add_parameter("Number of Pre-smoothing", n_pre_smoothing);
-      prm.add_parameter("Number of Post-smoothing", n_post_smoothing);
-      prm.add_parameter("Coarseing percentage", coarsening_percentage);
-      prm.add_parameter("Coarseing percentage", coarsening_percentage);
-      prm.add_parameter("Graph refining", graph_refining);
-      prm.add_parameter("Initial coarsening", initial_coarsening);
-      prm.add_parameter("Only One", only_one);
-      prm.add_parameter("Multigrid it", n_multigrid_it);
-
-      prm.add_parameter("Compute no mg solution", compute_no_mg_solution);
-
-      prm.add_parameter("Time steps", time_steps);
+      prm.add_parameter("Time dependent", is_time_dependent);
+      prm.add_parameter("Number of time steps", time_steps);
       prm.add_parameter("Time step length", time_step_length);
       prm.add_parameter("Theta", theta);
+    }
+    prm.leave_subsection();
 
-      prm.add_parameter("Resistance constant", resistance_constant);
+    prm.enter_subsection("Mesh");
+    {
+      prm.add_parameter("Mesh file name", mesh_file_name);
+      prm.add_parameter("Initial coarsening", initial_coarsening);
+    }
+    prm.leave_subsection();
+
+    prm.enter_subsection("Multigrid");
+    {
+      prm.add_parameter("Compute solution without multigrid", compute_no_mg_solution);
+      prm.add_parameter("Number of levels", n_v_cycles);
+      prm.add_parameter("Number of pre-smoothing steps", n_pre_smoothing);
+      prm.add_parameter("Number of post-smoothing steps", n_post_smoothing);
+      prm.add_parameter("SSOR smoother damping", omega);
+    }
+    prm.leave_subsection();
+
+    prm.enter_subsection("Boundary conditions and rhs");
+    {
+      prm.add_parameter("Time zero solution", initial_solution_expression);
+      prm.add_parameter("Arterioles neumann boundary condition", neumann_expression);
+      prm.add_parameter("Venules dirichlet boundary condition", exact_solution_expression);
+
+      prm.add_parameter("Right hand side expression", rhs_expression);
     }
     prm.leave_subsection();
 
@@ -118,48 +116,33 @@ struct PoissonParameters
                                 constants);
 
   }
-  unsigned int fe_degree                 = 1;
-  unsigned int initial_refinement        = 3;
-  unsigned int n_cycles                  = 1;
+  //Time
+  int time_steps = 10;
+  double time_step_length = 0.1;
+  double theta = 1;
+  bool is_time_dependent = false;
 
+  //Mesh
+  std::string mesh_file_name = "Network1.vtk";
+  int initial_coarsening = 1;
+  bool only_one = false;
+
+  //Multigrid
+  bool compute_no_mg_solution = false;
   unsigned int n_v_cycles                = 1;
   unsigned int n_pre_smoothing           = 2;
   unsigned int n_post_smoothing          = 2;
   double omega                           = 0.7;
-  double coarse_cg_tollerance            = 1e-12;
-  double coarsening_percentage           = 0.5;
-  double resistance_constant = 0;
-  bool only_one = true;
 
-  unsigned int inlet_dof = 0;
-  double inlet_pressure = 2;
-
-  int outlet_pressure = 1;
-  int n_multigrid_it = 1;
-  int initial_coarsening = 1;
-
-  bool compute_no_mg_solution = true;
-
-  //Time
-  int time_steps = -1;
-  double time_step_length = 0.1;
-  double theta = 0;
-
-  int graph_refining                     = 0;
-
-  unsigned int n_of_eigenvalues          = 1;
-
-  std::string  exact_solution_expression = "cos(pi*x)*cos(pi*y)";
-  std::string  rhs_expression            = "2*pi*pi*cos(pi*x)*cos(pi*y)";
-  std::string  neumann_expression        = "cos(2*pi*x)";
+  //Boundary conditions and rhs
   std::string initial_solution_expression = "0";
-  std::set<types::boundary_id> neumann_boundary_ids = {};
-
-  FunctionParser<3> transport_field;
-  FunctionParser<3> exact_solution;
   FunctionParser<3> initial_solution;
-  FunctionParser<3> rhs_function;
+  std::string  neumann_expression        = "10";
   FunctionParser<3> neumann_function;
+  std::string  exact_solution_expression = "0";
+  FunctionParser<3> exact_solution;
+  std::string  rhs_expression            = "1";
+  FunctionParser<3> rhs_function;
 
   mutable ParsedConvergenceTable convergence_table;
 
