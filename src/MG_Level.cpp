@@ -158,8 +158,10 @@ MG_Level::assemble_rhs(const FunctionParser<3> & rhs_function,
     {
       fe_values.reinit(cell);
 
-      fe_values.get_function_values(old_solution, old_solution_values);
-      fe_values.get_function_gradients(old_solution, old_solution_gradients);
+      if (time_info.is_time_dependent) {
+        fe_values.get_function_values(old_solution, old_solution_values);
+        fe_values.get_function_gradients(old_solution, old_solution_gradients);
+      }
 
       cell_rhs    = 0;
 

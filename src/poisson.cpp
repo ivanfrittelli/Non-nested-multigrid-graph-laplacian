@@ -203,6 +203,7 @@ Poisson::solve()
   TimeInfo time_info;
   time_info.dt = par.time_step_length;
   time_info.theta = par.theta;
+  time_info.is_time_dependent = par.is_time_dependent;
 
   //No mg solution compute only fist step (for time dependent problem).
   if (par.compute_no_mg_solution) {
@@ -246,7 +247,7 @@ Poisson::solve()
 
       //Con il ciclo scritto così, se non è time dependent esegue solo uno step, come giusto che sia
       do {
-        mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function,solution, time_info);
+        mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info);
 
         solver.solve(mg_levels[0] -> system_matrix, solution, system_rhs, my_preconditioner);
         mg_levels[0] -> constraints.distribute(solution);
