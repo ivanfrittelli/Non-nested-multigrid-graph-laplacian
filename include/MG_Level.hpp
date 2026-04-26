@@ -69,8 +69,8 @@ class MG_Level {
     assemble_system(const TimeInfo & time_info);
 
     void
-    assemble_rhs(const FunctionParser<3> & rhs_function, Vector<double> & rhs, 
-      const FunctionParser<3> & neumann_function,
+    assemble_rhs(FunctionParser<3> & rhs_function, Vector<double> & rhs, 
+      FunctionParser<3> & neumann_function,
       const Vector<double> & old_solution, 
       const TimeInfo & time_info);
 

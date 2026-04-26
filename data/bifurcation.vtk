@@ -1,0 +1,33 @@
+# vtk DataFile Version 3.0
+Biforcazione a 3 lati con punti intermedi
+ASCII
+DATASET UNSTRUCTURED_GRID
+
+POINTS 10 float
+0 0 0
+0.5 0 0
+1 0 0
+-0.25 0.4330127 0
+-0.5 0.8660254 0
+-0.75 1.2990381 0
+-0.25 -0.4330127 0
+-0.5 -0.8660254 0
+-0.75 -1.2990381 0
+0.25 0 0
+
+CELLS 3 15
+4 0 9 1 2
+4 0 3 4 5
+4 0 6 7 8
+
+CELL_TYPES 3
+4
+4
+4
+
+CELL_DATA 3
+SCALARS labels double
+LOOKUP_TABLE default
+2
+1
+1

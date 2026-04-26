@@ -102,18 +102,32 @@ struct PoissonParameters
     std::map<std::string, double> constants;
     constants["pi"] = numbers::PI;
 
+
+    std::string variables = FunctionParser<3>::default_variable_names();
+
+    if (is_time_dependent) 
+      variables = variables + ", t";
+
+    rhs_function.initialize(variables,
+                            {rhs_expression},
+                            constants, is_time_dependent);
+
+    neumann_function.initialize(variables,
+                                {neumann_expression},
+                                constants, is_time_dependent);
+
+    //(Per ora) non è time dependent
+    //Mi sembra realistico che a cambiare sia il flusso di sangue all'entrata
+    //Mentre la pressione in uscita sia sempre la stessa
+    //Potrebbe cambiare in futuro
     exact_solution.initialize(FunctionParser<3>::default_variable_names(),
                               {exact_solution_expression},
-                              constants);
-    rhs_function.initialize(FunctionParser<3>::default_variable_names(),
-                            {rhs_expression},
-                            constants);
-    neumann_function.initialize(FunctionParser<3>::default_variable_names(),
-                                {neumann_expression},
-                                constants);
+                              constants, false);
+
+    //Non è time depdendent perché è la soluzione al tempo 0
     initial_solution.initialize(FunctionParser<3>::default_variable_names(),
                                 {initial_solution_expression},
-                                constants);
+                                constants, false);
 
   }
   //Time
@@ -136,13 +150,13 @@ struct PoissonParameters
 
   //Boundary conditions and rhs
   std::string initial_solution_expression = "0";
-  FunctionParser<3> initial_solution;
+  mutable FunctionParser<3> initial_solution;
   std::string  neumann_expression        = "10";
-  FunctionParser<3> neumann_function;
+  mutable FunctionParser<3> neumann_function;
   std::string  exact_solution_expression = "0";
-  FunctionParser<3> exact_solution;
+  mutable FunctionParser<3> exact_solution;
   std::string  rhs_expression            = "1";
-  FunctionParser<3> rhs_function;
+  mutable FunctionParser<3> rhs_function;
 
   mutable ParsedConvergenceTable convergence_table;
 

@@ -189,6 +189,7 @@ Poisson::assemble_system()
   TimeInfo time_info;
   time_info.dt = par.time_step_length;
   time_info.theta = par.theta;
+  time_info.is_time_dependent = par.is_time_dependent;
 
   for (unsigned int i = 0; i < par.n_v_cycles; i++) {
     mg_levels[i] -> assemble_system(time_info);
@@ -218,6 +219,7 @@ Poisson::solve()
     //mg_levels[0] -> constraints.print(std::cout);
 
     mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info);
+    mg_levels[0] -> constraints.condense(mg_levels[0] -> system_matrix, system_rhs);
 
     solver_2.solve(mg_levels[0] -> system_matrix, no_mg_solution, system_rhs, preconditioner);
     mg_levels[0] -> constraints.distribute(no_mg_solution);
@@ -245,7 +247,7 @@ Poisson::solve()
 
       int i = 0;
 
-      //Con il ciclo scritto così, se non è time dependent esegue solo uno step, come giusto che sia
+      //Con il ciclo scritto così, se non è time dependent, esegue solo uno step, come giusto che sia
       do {
         mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info);
 

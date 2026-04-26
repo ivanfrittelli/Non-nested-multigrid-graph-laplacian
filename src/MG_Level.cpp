@@ -1,5 +1,6 @@
 #include "../include/MG_Level.hpp"
 
+#include <Kokkos_Pair.hpp>
 #include <deal.II/base/numbers.h>
 #include <deal.II/fe/fe_values.h>
 #include <iostream>
@@ -65,7 +66,6 @@ MG_Level::setup_system(const Function<3> & boundary_conditions) {
   sparsity_pattern.copy_from(dsp);
 
   system_matrix.reinit(sparsity_pattern);
-  
 }
 
 void
@@ -123,9 +123,9 @@ MG_Level::assemble_system(const TimeInfo & time_info) {
 }
 
 void 
-MG_Level::assemble_rhs(const FunctionParser<3> & rhs_function,
+MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
   Vector<double> & rhs, 
-  const FunctionParser<3> & neumann_function,
+  FunctionParser<3> & neumann_function,
   const Vector<double> & old_solution,
   const TimeInfo & time_info) 
 {
@@ -151,17 +151,17 @@ MG_Level::assemble_rhs(const FunctionParser<3> & rhs_function,
 
   std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
-  std::vector<double> old_solution_values(fe_values.n_quadrature_points);
-  std::vector<Tensor<1,3>> old_solution_gradients(fe_values.n_quadrature_points);
+  //Codice ridondante, da cambiare in futuro
+  if(time_info.is_time_dependent) {
+    std::vector<double> old_solution_values(fe_values.n_quadrature_points);
+    std::vector<Tensor<1,3>> old_solution_gradients(fe_values.n_quadrature_points);
 
-  for (const auto &cell : dof_handler.active_cell_iterators())
+    for (const auto &cell : dof_handler.active_cell_iterators())
     {
       fe_values.reinit(cell);
 
-      if (time_info.is_time_dependent) {
-        fe_values.get_function_values(old_solution, old_solution_values);
-        fe_values.get_function_gradients(old_solution, old_solution_gradients);
-      }
+      fe_values.get_function_values(old_solution, old_solution_values);
+      fe_values.get_function_gradients(old_solution, old_solution_gradients);
 
       cell_rhs    = 0;
 
@@ -170,7 +170,102 @@ MG_Level::assemble_rhs(const FunctionParser<3> & rhs_function,
           {
             const auto &x_q = fe_values.quadrature_point(q_index);
 
-            if (!time_info.is_time_dependent) {
+            cell_rhs(i) += fe_values.shape_value(i, q_index)
+              * old_solution_values[q_index]
+              * fe_values.JxW(q_index);
+
+            cell_rhs(i) -= time_info.dt * (1 - time_info.theta)
+                          * fe_values.shape_grad(i, q_index)
+                          * old_solution_gradients[q_index]
+                          * fe_values.JxW(q_index);
+            
+            cell_rhs(i) += 
+                          time_info.dt * (1 - time_info.theta) 
+                          *(fe_values.shape_value(i, q_index) * // phi_i(x_q)
+                          rhs_function.value(x_q) *       // f(x_q)
+                          fe_values.JxW(q_index));            // dx
+
+            for (const auto &f : cell->face_indices())
+              if (cell->face(f)->at_boundary() && cell->face(f)->boundary_id() == 1)
+                {
+                  fe_face_values.reinit(cell, f);
+
+                  for (const unsigned int q_index :
+                      fe_face_values.quadrature_point_indices()) {
+                        const auto neumann_function_value = neumann_function.value(fe_face_values.quadrature_point(q_index));
+
+                        for (const unsigned int i : fe_face_values.dof_indices())
+                          cell_rhs(i) += time_info.dt * (1 - time_info.theta) *
+                            fe_face_values.shape_value(i, q_index) * // phi_i(x_q)
+                            neumann_function_value * // g(x_q)
+                            fe_face_values.JxW(q_index);                 // ds
+                      }
+                    
+                }
+          }
+
+      cell->get_dof_indices(local_dof_indices);
+
+      constraints.distribute_local_to_global(
+        cell_rhs, local_dof_indices, rhs);
+    }
+
+    rhs_function.advance_time(time_info.dt);
+    neumann_function.advance_time(time_info.dt);
+
+    for (const auto &cell : dof_handler.active_cell_iterators()) {
+      fe_values.reinit(cell);
+
+      cell_rhs = 0;
+
+        for (const unsigned int q_index : fe_values.quadrature_point_indices())
+          for (const unsigned int i : fe_values.dof_indices())
+            {
+              const auto &x_q = fe_values.quadrature_point(q_index);
+
+              cell_rhs(i) += 
+                            time_info.dt * time_info.theta
+                            *(fe_values.shape_value(i, q_index) * // phi_i(x_q)
+                            rhs_function.value(x_q) *       // f(x_q)
+                            fe_values.JxW(q_index));            // dx
+
+              for (const auto &f : cell->face_indices())
+                if (cell->face(f)->at_boundary() && cell->face(f)->boundary_id() == 1)
+                  {
+                    fe_face_values.reinit(cell, f);
+
+                    for (const unsigned int q_index :
+                        fe_face_values.quadrature_point_indices()) {
+                          const auto neumann_function_value = neumann_function.value(fe_face_values.quadrature_point(q_index));
+
+                          for (const unsigned int i : fe_face_values.dof_indices())
+                            cell_rhs(i) += time_info.dt * time_info.theta *
+                              fe_face_values.shape_value(i, q_index) * // phi_i(x_q)
+                              neumann_function_value * // g(x_q)
+                              fe_face_values.JxW(q_index);                 // ds
+                        }
+                      
+                  }
+            }
+
+        cell->get_dof_indices(local_dof_indices);
+
+        constraints.distribute_local_to_global(
+          cell_rhs, local_dof_indices, rhs);
+    }
+
+  }
+  else {
+    for (const auto &cell : dof_handler.active_cell_iterators())
+    {
+      fe_values.reinit(cell);
+
+      cell_rhs    = 0;
+
+      for (const unsigned int q_index : fe_values.quadrature_point_indices())
+        for (const unsigned int i : fe_values.dof_indices())
+          {
+            const auto &x_q = fe_values.quadrature_point(q_index);
               cell_rhs(i) += //(i == inlet_dof ? 1:0)*
                             (fe_values.shape_value(i, q_index) * // phi_i(x_q)
                             rhs_function.value(x_q) *       // f(x_q)
@@ -192,47 +287,14 @@ MG_Level::assemble_rhs(const FunctionParser<3> & rhs_function,
                         }
                       
                   }
-            }
-            else {
-              cell_rhs(i) += fe_values.shape_value(i, q_index)
-                * old_solution_values[q_index]
-                * fe_values.JxW(q_index);
-
-              cell_rhs(i) -= time_info.dt * (1 - time_info.theta)
-                            * fe_values.shape_grad(i, q_index)
-                            * old_solution_gradients[q_index]
-                            * fe_values.JxW(q_index);
-              
-              cell_rhs(i) += 
-                            time_info.dt * (fe_values.shape_value(i, q_index) * // phi_i(x_q)
-                            rhs_function.value(x_q) *       // f(x_q)
-                            fe_values.JxW(q_index));            // dx
-
-              for (const auto &f : cell->face_indices())
-                if (cell->face(f)->at_boundary() && cell->face(f)->boundary_id() == 1)
-                  {
-                    fe_face_values.reinit(cell, f);
-
-                    for (const unsigned int q_index :
-                        fe_face_values.quadrature_point_indices()) {
-                          const auto neumann_function_value = neumann_function.value(fe_face_values.quadrature_point(q_index));
-
-                          for (const unsigned int i : fe_face_values.dof_indices())
-                            cell_rhs(i) += time_info.dt * fe_face_values.shape_value(i, q_index) * // phi_i(x_q)
-                              neumann_function_value * // g(x_q)
-                              fe_face_values.JxW(q_index);                 // ds
-                        }
-                      
-                  }
-            }
-            
           }
 
-      cell->get_dof_indices(local_dof_indices);
+        cell->get_dof_indices(local_dof_indices);
 
-      constraints.distribute_local_to_global(
-        cell_rhs, local_dof_indices, rhs);
+        constraints.distribute_local_to_global(
+          cell_rhs, local_dof_indices, rhs);
     }
+  }
 }
 
 std::map<int, int>
