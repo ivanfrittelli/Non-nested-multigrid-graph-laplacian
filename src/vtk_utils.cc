@@ -243,6 +243,8 @@ namespace VTKUtils
             for (unsigned int j = 0; j < cell->GetNumberOfPoints()-1; ++j) {
               my_graph.add_cell(cell->GetPointId(j), cell->GetPointId(j+1));
 
+              my_graph.small_to_big_cell_map[my_graph.cells.size()-1] = my_graph.big_cells.size();
+
               if(j == 0) starting_cell = my_graph.cells.size() -1;
               if(j == cell->GetNumberOfPoints()-2) ending_cell = my_graph.cells.size() -1;
 
@@ -255,7 +257,7 @@ namespace VTKUtils
             my_graph.add_big_cell(
               cell->GetPointId(0), cell->GetPointId(cell -> GetNumberOfPoints() -1),
               starting_cell, ending_cell,
-              cell->GetNumberOfPoints());
+              cell->GetNumberOfPoints() - 1);
 
             out << "\n\n";
           }
@@ -292,7 +294,6 @@ namespace VTKUtils
           my_graph.neumann_big_cells.push_back(i);
         }
     }
-
   }
 
   void

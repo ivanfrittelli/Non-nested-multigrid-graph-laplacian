@@ -66,13 +66,14 @@ class MG_Level {
     setup_system(const Function<3> & boundary_conditions);
 
     void
-    assemble_system(const TimeInfo & time_info);
+    assemble_system(const TimeInfo & time_info, const Vector<double> & radii);
 
     void
     assemble_rhs(FunctionParser<3> & rhs_function, Vector<double> & rhs, 
       FunctionParser<3> & neumann_function,
       const Vector<double> & old_solution, 
-      const TimeInfo & time_info);
+      const TimeInfo & time_info,
+      const Vector<double> & radii);
 
     std::map<int, int> 
     get_dof_to_vertex_map();

@@ -20,6 +20,10 @@ Poisson::make_grid()
   VTKUtils::read_vtk_graph(par.mesh_file_name, fine_graph, par.only_one);
   VTKUtils::read_cell_label_graph(par.mesh_file_name, fine_graph, "labels");
 
+  radii.reinit(fine_graph.big_cells.size());
+
+  VTKUtils::read_cell_data(par.mesh_file_name, "thickness", radii);
+
   std::map<int, int> coarse_to_fine_vertex_mapl;
   std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>> not_trivial_prolongationl;
 
@@ -192,7 +196,7 @@ Poisson::assemble_system()
   time_info.is_time_dependent = par.is_time_dependent;
 
   for (unsigned int i = 0; i < par.n_v_cycles; i++) {
-    mg_levels[i] -> assemble_system(time_info);
+    mg_levels[i] -> assemble_system(time_info, radii);
   }
 }
 
@@ -218,7 +222,7 @@ Poisson::solve()
 
     //mg_levels[0] -> constraints.print(std::cout);
 
-    mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info);
+    mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
     mg_levels[0] -> constraints.condense(mg_levels[0] -> system_matrix, system_rhs);
 
     solver_2.solve(mg_levels[0] -> system_matrix, no_mg_solution, system_rhs, preconditioner);
@@ -249,7 +253,7 @@ Poisson::solve()
 
       //Con il ciclo scritto così, se non è time dependent, esegue solo uno step, come giusto che sia
       do {
-        mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info);
+        mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
 
         solver.solve(mg_levels[0] -> system_matrix, solution, system_rhs, my_preconditioner);
         mg_levels[0] -> constraints.distribute(solution);

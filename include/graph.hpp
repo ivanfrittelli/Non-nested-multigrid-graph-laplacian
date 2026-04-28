@@ -47,6 +47,8 @@ class Graph {
     
     std::vector<std::vector<int>> adiacency;    
 
+    std::map<int,int> small_to_big_cell_map;
+
     std::vector<int> dirichlet_big_cells;
     std::vector<int> neumann_big_cells;
 };

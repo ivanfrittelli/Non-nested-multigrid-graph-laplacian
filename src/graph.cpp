@@ -315,6 +315,8 @@ Graph::get_coarser_graph_lort(std::map<int, int> & coarse_to_fine_vertex_map,
 
           //Aggiungi il collegamento con il punto precedente
           result.add_cell(fine_to_coarse_vertex_map[last_hold_vertex], fine_to_coarse_vertex_map[current_vertex]);
+          result.small_to_big_cell_map[result.cells.size()-1] = result.big_cells.size();
+
           if (coarse_cell_start < 0) {
             coarse_cell_start = result.cells.size()-1;
           }
@@ -364,6 +366,7 @@ Graph::get_coarser_graph_lort(std::map<int, int> & coarse_to_fine_vertex_map,
 
     //Devo creare il ponte tra l'ultimo vertice e il node2
     result.add_cell(fine_to_coarse_vertex_map[last_hold_vertex], fine_to_coarse_vertex_map[big_cell.node2]);
+    result.small_to_big_cell_map[result.cells.size()-1] = result.big_cells.size();
     coarse_cell_end = result.cells.size()-1;
     n_coarse_cell++;
 

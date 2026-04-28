@@ -192,6 +192,8 @@ private:
   Vector<double> no_mg_solution;
   Vector<double> system_rhs;
 
+  Vector<double> radii;
+
   std::vector<std::shared_ptr<MG_Level>> mg_levels;
   std::vector<std::map<int, int>> coarse_to_fine_dof_maps;
 

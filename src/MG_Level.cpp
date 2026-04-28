@@ -69,7 +69,7 @@ MG_Level::setup_system(const Function<3> & boundary_conditions) {
 }
 
 void
-MG_Level::assemble_system(const TimeInfo & time_info) {
+MG_Level::assemble_system(const TimeInfo & time_info, const Vector<double> & radii) {
   QGauss<1>     quadrature_formula(fe.degree + 1);
 
   FEValues<1,3> fe_values(fe,
@@ -95,11 +95,14 @@ MG_Level::assemble_system(const TimeInfo & time_info) {
 
               if (!time_info.is_time_dependent) {
                 cell_matrix(i, j) +=
+                  std::pow(radii[graph.small_to_big_cell_map[cell -> active_cell_index()]], 4) * 3.1415 *
                   (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
                   fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
                   fe_values.JxW(q_index));           // dx
               } else {
-                cell_matrix(i, j) += time_info.dt * time_info.theta * 
+                cell_matrix(i, j) += 
+                  radii[graph.small_to_big_cell_map[cell -> active_cell_index()]]*
+                  time_info.dt * time_info.theta * 
                   (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
                   fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
                   fe_values.JxW(q_index));
@@ -127,7 +130,8 @@ MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
   Vector<double> & rhs, 
   FunctionParser<3> & neumann_function,
   const Vector<double> & old_solution,
-  const TimeInfo & time_info) 
+  const TimeInfo & time_info,
+  const Vector<double> & radii) 
 {
   rhs = 0;
 
@@ -174,7 +178,9 @@ MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
               * old_solution_values[q_index]
               * fe_values.JxW(q_index);
 
-            cell_rhs(i) -= time_info.dt * (1 - time_info.theta)
+            cell_rhs(i) -= 
+                        std::pow(radii[graph.small_to_big_cell_map[cell -> active_cell_index()]], 4) * 3.1415 *
+                          time_info.dt * (1 - time_info.theta)
                           * fe_values.shape_grad(i, q_index)
                           * old_solution_gradients[q_index]
                           * fe_values.JxW(q_index);
