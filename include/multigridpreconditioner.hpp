@@ -103,6 +103,7 @@ class MultigridPreconditioner {
       }
 
       //Coarse grid solver
+      mg_levels[n_of_levels-1] -> constraints.condense(mg_levels[n_of_levels-1] -> system_matrix, rhs[n_of_levels-1]);
       solver2.vmult(x[n_of_levels-1], rhs[n_of_levels-1]);
       mg_levels[n_of_levels-1] -> constraints.distribute(x[n_of_levels-1]);
 

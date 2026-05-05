@@ -255,6 +255,8 @@ Poisson::solve()
       do {
         mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
 
+        mg_levels[0] -> constraints.condense(mg_levels[0] -> system_matrix, system_rhs);
+
         solver.solve(mg_levels[0] -> system_matrix, solution, system_rhs, my_preconditioner);
         mg_levels[0] -> constraints.distribute(solution);
 

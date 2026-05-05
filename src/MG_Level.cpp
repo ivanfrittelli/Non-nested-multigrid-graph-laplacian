@@ -70,6 +70,7 @@ MG_Level::setup_system(const Function<3> & boundary_conditions) {
 
 void
 MG_Level::assemble_system(const TimeInfo & time_info, const Vector<double> & radii) {
+  
   QGauss<1>     quadrature_formula(fe.degree + 1);
 
   FEValues<1,3> fe_values(fe,
@@ -118,8 +119,16 @@ MG_Level::assemble_system(const TimeInfo & time_info, const Vector<double> & rad
 
       cell->get_dof_indices(local_dof_indices);
 
-      constraints.distribute_local_to_global(
-        cell_matrix, local_dof_indices, system_matrix);
+      //constraints.distribute_local_to_global(
+      //    cell_matrix, local_dof_indices, system_matrix);
+
+    for (const unsigned int i : fe_values.dof_indices())
+        {
+          for (const unsigned int j : fe_values.dof_indices())
+            system_matrix.add(local_dof_indices[i],
+                              local_dof_indices[j],
+                              cell_matrix(i, j));
+        }
 
     }
 
@@ -212,8 +221,15 @@ MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
 
       cell->get_dof_indices(local_dof_indices);
 
-      constraints.distribute_local_to_global(
-        cell_rhs, local_dof_indices, rhs);
+      for (const unsigned int i : fe_values.dof_indices())
+        {
+          rhs(local_dof_indices[i]) += cell_rhs(i);
+        }
+
+
+      //constraints.distribute_local_to_global(
+      //    cell_rhs, local_dof_indices, rhs);
+      
     }
 
     rhs_function.advance_time(time_info.dt);
@@ -256,8 +272,13 @@ MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
 
         cell->get_dof_indices(local_dof_indices);
 
-        constraints.distribute_local_to_global(
-          cell_rhs, local_dof_indices, rhs);
+        //constraints.distribute_local_to_global(
+        //  cell_rhs, local_dof_indices, rhs);
+
+        for (const unsigned int i : fe_values.dof_indices())
+        {
+          rhs(local_dof_indices[i]) += cell_rhs(i);
+        }
     }
 
   }
@@ -297,8 +318,13 @@ MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
 
         cell->get_dof_indices(local_dof_indices);
 
-        constraints.distribute_local_to_global(
-          cell_rhs, local_dof_indices, rhs);
+        for (const unsigned int i : fe_values.dof_indices())
+        {
+          rhs(local_dof_indices[i]) += cell_rhs(i);
+        }
+
+        //constraints.distribute_local_to_global(
+        //  cell_rhs, local_dof_indices, rhs);
     }
   }
 }
