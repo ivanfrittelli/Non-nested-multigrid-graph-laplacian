@@ -24,141 +24,126 @@ Poisson::make_grid()
 
   VTKUtils::read_cell_data(par.mesh_file_name, "thickness", radii);
 
-  std::map<int, int> coarse_to_fine_vertex_mapl;
-  std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>> not_trivial_prolongationl;
-
+  std::map<int, std::vector<std::pair<int,double>>> tmp;
+  //Coarsening iniziale, se non voglio risolvere il problema sul grafo originale ma su uno meno fine 
   for (int i = 0; i < par.initial_coarsening; i++)
-    fine_graph = fine_graph.get_coarser_graph_lort(coarse_to_fine_vertex_mapl, not_trivial_prolongationl);
-
+    fine_graph = fine_graph.get_coarser_graph(tmp, 0.5);
+    
+  //Configurazione primo livello
   mg_levels.push_back(std::make_shared<MG_Level>(fine_graph, 0));
   mg_levels[0] -> make_grid();
-
-  std::vector<std::map<int, int>> coarse_to_fine_vertex_maps;
-  std::vector<std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>>> not_trivial_prolongations;
-
-  //Creazione altri livelli
-  for (unsigned int i = 1; i < par.n_v_cycles; i++) {
-    std::map<int, int> coarse_to_fine_vertex_map_lort;
-    std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>> not_trivial_prolongation_lort;
-
-    Timer tim;
-    tim.start();
-
-    Graph my_coarse_graph = mg_levels[i-1] -> graph.get_coarser_graph_lort(coarse_to_fine_vertex_map_lort, not_trivial_prolongation_lort);
-
-    std::cout<<tim.stop() <<"\n";
-
-    mg_levels.push_back(std::make_shared<MG_Level>(my_coarse_graph, i));
-    mg_levels[i] -> make_grid();
-
-    coarse_to_fine_vertex_maps.push_back(coarse_to_fine_vertex_map_lort);
-    not_trivial_prolongations.push_back(not_trivial_prolongation_lort);
-  }
-
-  //Impostazioni per mappa restriction e prolongation
-  for (unsigned int i = 0; i < par.n_v_cycles - 1; i++) {
-    std::ofstream oout("AAA.txt");
-
-    //Imposto la coarse to fine dof map
-    std::map<int, int> coarse_to_fine_dof_map;
-    std::map<int, int> vertex_to_dof_fine_map = mg_levels[i] ->get_vertex_to_dof_map();
-    std::map<int, int> dof_to_vertex_coarse_map = mg_levels[i+1] -> get_dof_to_vertex_map();
-
-    //mg_levels[i] -> set_inlet_dof(i == 0 ? vertex_to_dof_fine_map[0] : -1);
-
-    //coarse_to_fine_dof_map = dof_to_vertex_coarse_map \circ coarse_to_fine_vertex_map \circ vertex_to_dof_fine_map
-    for (const auto & [c_dof, c_vert] : dof_to_vertex_coarse_map) {
-      int f_vert = (coarse_to_fine_vertex_maps[i])[c_vert];
-      coarse_to_fine_dof_map[c_dof] = vertex_to_dof_fine_map[f_vert];
-
-      oout << c_dof << " " << vertex_to_dof_fine_map[f_vert] << "\n";
-    }
-
-    coarse_to_fine_dof_maps.push_back(coarse_to_fine_dof_map);
-
-    //Imposto le prolongation non banali
-    std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>> not_trivial_prolongation_dof;
-
-    std::map<int, int> vertex_to_dof_coarse_map = mg_levels[i+1] ->get_vertex_to_dof_map();
-
-    for (const auto & [key, pair] : not_trivial_prolongations[i]) {
-      std::pair<int, double> left_dof_pair;
-      left_dof_pair.first = vertex_to_dof_coarse_map[pair.first.first];
-      left_dof_pair.second = pair.first.second;
-
-      std::pair<int, double> right_dof_pair;
-      right_dof_pair.first = vertex_to_dof_coarse_map[pair.second.first];
-      right_dof_pair.second = pair.second.second;
-
-      not_trivial_prolongation_dof[vertex_to_dof_fine_map[key]] = std::make_pair(left_dof_pair, right_dof_pair);
-    }
-
-    not_trivial_prolongations_dof.push_back(not_trivial_prolongation_dof);
-  }
-
-  //Boundary conditions
-  for (int i = 0; i < par.n_v_cycles; i++) {
+  
+  {
+    //Boundary conditions
     std::set<int> dirichlet_cells, neumann_cells;
 
-    Graph * graph = &mg_levels[i] -> graph;
-
-    for (unsigned int j = 0; j < graph ->dirichlet_big_cells.size(); j++) {
-      auto big_cell = graph ->big_cells[graph ->dirichlet_big_cells[j]];
-      if (graph ->adiacency[big_cell.node1].size() == 1) {
-        dirichlet_cells.insert(graph ->adiacency[big_cell.node1][0]);
+    for (unsigned int j = 0; j < fine_graph.dirichlet_big_cells.size(); j++) {
+      auto big_cell = fine_graph.big_cells[fine_graph.dirichlet_big_cells[j]];
+      if (fine_graph.adiacency[big_cell.node1].size() == 1) {
+        dirichlet_cells.insert(fine_graph.adiacency[big_cell.node1][0]);
       }
-      if (graph ->adiacency[big_cell.node2].size() == 1) {
-        dirichlet_cells.insert(graph ->adiacency[big_cell.node2][0]);
+      if (fine_graph.adiacency[big_cell.node2].size() == 1) {
+        dirichlet_cells.insert(fine_graph.adiacency[big_cell.node2][0]);
       }
     }
 
-    for (unsigned int j = 0; j < graph ->neumann_big_cells.size(); j++) {
-      auto big_cell = graph ->big_cells[graph ->neumann_big_cells[j]];
-      if (graph ->adiacency[big_cell.node1].size() == 1) {
-        neumann_cells.insert(graph ->adiacency[big_cell.node1][0]);
+    for (unsigned int j = 0; j < fine_graph.neumann_big_cells.size(); j++) {
+      auto big_cell = fine_graph.big_cells[fine_graph.neumann_big_cells[j]];
+      if (fine_graph.adiacency[big_cell.node1].size() == 1) {
+        neumann_cells.insert(fine_graph.adiacency[big_cell.node1][0]);
       }
-      if (graph ->adiacency[big_cell.node2].size() == 1) {
-        neumann_cells.insert(graph ->adiacency[big_cell.node2][0]);
+      if (fine_graph.adiacency[big_cell.node2].size() == 1) {
+        neumann_cells.insert(fine_graph.adiacency[big_cell.node2][0]);
       }
     }
-    
-    mg_levels[i] -> setup_boundary_conditions(dirichlet_cells, neumann_cells);
+
+    mg_levels[0] -> setup_boundary_conditions(dirichlet_cells, neumann_cells);
   }
   
 
-  prolongation_dynamic_patterns.resize(par.n_v_cycles - 1);
-  prolongation_sparsity_patterns.resize(par.n_v_cycles - 1);
-  prolongations.resize(par.n_v_cycles - 1);
+  double treshold = 10;
 
-  for (unsigned int i = 0; i < par.n_v_cycles - 1; i++) {
-    prolongation_dynamic_patterns[i].reinit(mg_levels[i] -> dof_handler.n_dofs(), mg_levels[i+1] -> dof_handler.n_dofs());
+  restriction_dynamic_patterns.resize(par.n_v_cycles - 1);
+  restriction_sparsity_patterns.resize(par.n_v_cycles - 1);
+  restrictions.resize(par.n_v_cycles - 1);
 
-    for (const auto [key, value] : coarse_to_fine_dof_maps[i]) {
-      prolongation_dynamic_patterns[i].add(value, key);
+  //Creazione altri livelli
+  for (unsigned int i = 1; i < par.n_v_cycles; i++) {
+    std::map<int, std::vector<std::pair<int,double>>> vertex_restriction_map;
+
+    //Grafo coarse
+    Graph my_coarse_graph = mg_levels[i-1] -> graph.get_coarser_graph(vertex_restriction_map, treshold);
+
+    //Boundary conditions
+    std::set<int> dirichlet_cells, neumann_cells;
+    {
+      for (unsigned int j = 0; j < my_coarse_graph.dirichlet_big_cells.size(); j++) {
+        auto big_cell = my_coarse_graph.big_cells[my_coarse_graph.dirichlet_big_cells[j]];
+        if (my_coarse_graph.adiacency[big_cell.node1].size() == 1) {
+          dirichlet_cells.insert(my_coarse_graph.adiacency[big_cell.node1][0]);
+        }
+        if (my_coarse_graph.adiacency[big_cell.node2].size() == 1) {
+          dirichlet_cells.insert(my_coarse_graph.adiacency[big_cell.node2][0]);
+        }
+      }
+
+      for (unsigned int j = 0; j < my_coarse_graph.neumann_big_cells.size(); j++) {
+        auto big_cell = my_coarse_graph.big_cells[my_coarse_graph.neumann_big_cells[j]];
+        if (my_coarse_graph.adiacency[big_cell.node1].size() == 1) {
+          neumann_cells.insert(my_coarse_graph.adiacency[big_cell.node1][0]);
+        }
+        if (my_coarse_graph.adiacency[big_cell.node2].size() == 1) {
+          neumann_cells.insert(my_coarse_graph.adiacency[big_cell.node2][0]);
+        }
+      }
     }
 
-    for (const auto & [key, pair] : not_trivial_prolongations[i]) {
-      prolongation_dynamic_patterns[i].add(key, pair.first.first);
-      prolongation_dynamic_patterns[i].add(key, pair.second.first);
+    //Setup mg level
+    mg_levels.push_back(std::make_shared<MG_Level>(my_coarse_graph, i));
+    mg_levels[i] -> make_grid();
+    mg_levels[i] -> setup_boundary_conditions(dirichlet_cells, neumann_cells);
+
+    //Setup mappa di restriction
+    std::map<int, int> vertex_to_dof_fine_map = mg_levels[i-1] ->get_vertex_to_dof_map();
+    std::map<int, int> vertex_to_dof_coarse_map = mg_levels[i] -> get_vertex_to_dof_map();
+
+    //Setup sparsity pattern dinamico della restriction
+    restriction_dynamic_patterns[i-1].reinit(mg_levels[i] -> dof_handler.n_dofs(), mg_levels[i-1] -> dof_handler.n_dofs());
+    for (const auto & [fine_dof, coarse_dofs_map] : vertex_restriction_map) {
+      for (const auto & [coarse_dof, weight] : coarse_dofs_map) {
+        restriction_dynamic_patterns[i-1].add(vertex_to_dof_coarse_map[coarse_dof], vertex_to_dof_fine_map[fine_dof]);
+      }
+    }
+    restriction_sparsity_patterns[i-1].copy_from(restriction_dynamic_patterns[i-1]);
+
+    //Scrivo la matrice restriction
+    restrictions[i-1].reinit(restriction_sparsity_patterns[i-1]);
+    for (const auto & [fine_dof, coarse_dofs_map] : vertex_restriction_map) {
+      for (const auto & [coarse_dof, weight] : coarse_dofs_map) {
+        restrictions[i-1].set(vertex_to_dof_coarse_map[coarse_dof], vertex_to_dof_fine_map[fine_dof], weight);
+      }
     }
 
-    prolongation_sparsity_patterns[i].copy_from(prolongation_dynamic_patterns[i]);
-    prolongations[i].reinit(prolongation_sparsity_patterns[i]);
-
-    for (const auto [key, value] : coarse_to_fine_dof_maps[i]) {
-      prolongations[i].set(value, key, 1);
+    /*
+    std::ofstream out("re.txt");
+    
+    if (i > 1)
+    for (int k = 0; k < mg_levels[i] -> dof_handler.n_dofs(); k++) {
+      for (int j = 0; j < mg_levels[i-1] -> dof_handler.n_dofs(); j++) {
+        out<<restrictions[i-1].el(k,j) << " ";
+      }
+      //out<<"||";
+      for (int j = 0; j < 3; j++) {
+        //out<<my_coarse_graph.points[k][j]<<" ";
+      }
+      out<<"\n";
     }
-
-    for (const auto & [key, pair] : not_trivial_prolongations[i]) {
-      prolongations[i].set(key, pair.first.first, pair.first.second);
-      prolongations[i].set(key, pair.second.first, pair.second.second);
-    }
+    out.close();
+    */
   }
+    
 
-
-  //std::map<int, int> vertex_to_dof_fine_map = mg_levels[par.n_v_cycles-1] ->get_vertex_to_dof_map();
-  //mg_levels[par.n_v_cycles-1] -> set_inlet_dof(mg_levels.size() == 1 ? vertex_to_dof_fine_map[0] : -1);
-
+  //Faccio un vtk delle triangolazioni
   for (unsigned int i = 0; i < mg_levels.size(); i++) {
     std::ofstream out("tria" + std::to_string(i) + ".vtk");
 
@@ -166,6 +151,26 @@ Poisson::make_grid()
 
     out.close();
   }
+ 
+  /*
+  {
+    std::map<int, std::vector<int>> classic_coarse_to_fine_vertex_map;
+    std::map<int, int> classic_coarse_to_fine_cell_map;
+    double classic_length_treshold = 0.4;
+
+    Graph classic_coarse_graph = fine_graph.get_classic_coarser_graph(classic_coarse_to_fine_vertex_map, 
+      classic_coarse_to_fine_cell_map,classic_length_treshold);
+
+    auto classic_mg_level = std::make_shared<MG_Level>(classic_coarse_graph, -1);
+    classic_mg_level -> make_grid();
+
+    std::cout<<"Punti scartati: " << fine_graph.points.size() - classic_coarse_graph.points.size() <<"\n";
+
+    std::ofstream out("my_tria.vtk");
+    g_out.write_vtk(classic_mg_level -> triangulation, out);
+    out.close();
+  }
+  */
 }
 
 void
@@ -223,7 +228,6 @@ Poisson::solve()
     //mg_levels[0] -> constraints.print(std::cout);
 
     mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
-    mg_levels[0] -> constraints.condense(mg_levels[0] -> system_matrix, system_rhs);
 
     solver_2.solve(mg_levels[0] -> system_matrix, no_mg_solution, system_rhs, preconditioner);
     mg_levels[0] -> constraints.distribute(no_mg_solution);
@@ -239,45 +243,59 @@ Poisson::solve()
   }
 
   if (par.n_v_cycles > 1) { 
-    tim.restart();
-
     SolverControl            solver_control(1000, 1e-12);
     SolverCG<Vector<double>> solver(solver_control);
   
     MultigridPreconditioner<Vector<double>> my_preconditioner(mg_levels, coarse_to_fine_dof_maps, 
-      not_trivial_prolongations_dof,
       par.omega,
-      par.n_pre_smoothing, par.n_post_smoothing, prolongations);
+      par.n_pre_smoothing, par.n_post_smoothing, restrictions);
 
+      
       int i = 0;
+      
+      /*
+      for (int j = 0; j < system_rhs.size(); j++) {
+        for (int k = 0; k < system_rhs.size(); k++) {
+          std::cout<<mg_levels[0] -> system_matrix.el(j,k) << " ";
+        }
+        std::cout<<"\n";
+      }
+      */
 
+      
       //Con il ciclo scritto così, se non è time dependent, esegue solo uno step, come giusto che sia
       do {
         mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
 
-        mg_levels[0] -> constraints.condense(mg_levels[0] -> system_matrix, system_rhs);
-
+        tim.restart();
         solver.solve(mg_levels[0] -> system_matrix, solution, system_rhs, my_preconditioner);
         mg_levels[0] -> constraints.distribute(solution);
+        std::cout<<" Tempo impiegato risoluzione";
+        if(time_info.is_time_dependent) 
+          std::cout<< " time-step";
+
+        std::cout <<":"<< tim.stop() << " secondi.\n";
 
         output_results(i);
 
         i++;
       } while(i < par.time_steps && par.is_time_dependent);
-    
+
     /*
     Vector<double> residue(mg_levels[0] -> dof_handler.n_dofs());
     Vector<double> correction(mg_levels[0] -> dof_handler.n_dofs());
 
     solution = 0;
-    for (int i = 0; i < par.n_multigrid_it; i++) {
-      mg_levels[0]->system_matrix.residual(residue, solution, system_rhs);
+    mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
+    for (int k = 0; k < 100; k++) {
+      mg_levels[0]-> system_matrix.residual(residue, solution, system_rhs);
+
 
       double res = residue.l2_norm();
 
-      std::cout<<"All'iterazione " << i << ", il residuo è: " << residue.l2_norm() << "\n";
+      std::cout<<"All'iterazione " << k << ", il residuo è: " << residue.l2_norm() << "\n";
 
-      if (res < 1e-12) break;
+      if (res < 1e-11) break;
 
       my_preconditioner.vmult(correction, residue);
       mg_levels[0] -> constraints.distribute(correction);
@@ -286,13 +304,13 @@ Poisson::solve()
 
       //par.convergence_table.difference(mg_levels[0] -> dof_handler, solution, no_mg_solution);
     }
-      */
+     
+    //output_results(0);
+    */
+    
 
-        
     std::cout << "   " << solver_control.last_step()
               << " CG iterations needed to obtain convergence." << std::endl;  
-
-    std::cout<<" Tempo impiegato multigrid: " << tim.stop() << " secondi.\n";
 
   }  
 }

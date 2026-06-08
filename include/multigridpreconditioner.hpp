@@ -13,13 +13,11 @@ class MultigridPreconditioner {
   public:
     MultigridPreconditioner(std::vector<std::shared_ptr<MG_Level>> & mg_levels,
         std::vector<std::map<int, int>> & coarse_to_fine_dof_maps, 
-        std::vector<std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>>> not_trivial_prolongations_dof,
-        double omega, int n_pre_smoothing, int n_post_smoothing, std::vector<SparseMatrix<double>> & prolongations
+        double omega, int n_pre_smoothing, int n_post_smoothing, std::vector<SparseMatrix<double>> & restrictions
         ): 
       mg_levels(mg_levels),
       coarse_to_fine_dof_maps(coarse_to_fine_dof_maps),
-      not_trivial_prolongations_dof(not_trivial_prolongations_dof),
-      n_pre_smoothing(n_pre_smoothing), n_post_smoothing(n_post_smoothing), prolongations(prolongations)
+      n_pre_smoothing(n_pre_smoothing), n_post_smoothing(n_post_smoothing), restrictions(restrictions)
     {
       for (unsigned int i = 0; i < mg_levels.size(); i++) {
         n_dofs.push_back(mg_levels[i] -> dof_handler.n_dofs());
@@ -99,18 +97,18 @@ class MultigridPreconditioner {
         }
 
         mg_levels[k] -> system_matrix.residual(residual[k], x[k], rhs[k]);
-        prolongations[k].Tvmult(rhs[k+1], residual[k]);
+        restrictions[k].vmult(rhs[k+1], residual[k]);
       }
 
       //Coarse grid solver
-      mg_levels[n_of_levels-1] -> constraints.condense(mg_levels[n_of_levels-1] -> system_matrix, rhs[n_of_levels-1]);
+      //mg_levels[n_of_levels-1] -> constraints.condense(mg_levels[n_of_levels-1] -> system_matrix, rhs[n_of_levels-1]);
       solver2.vmult(x[n_of_levels-1], rhs[n_of_levels-1]);
       mg_levels[n_of_levels-1] -> constraints.distribute(x[n_of_levels-1]);
 
       //Prolongation
       for (int k = n_of_levels - 2; k >= 0; k--) {
 
-        prolongations[k].vmult(coarse_grid_corrections[k], x[k+1]);
+        restrictions[k].Tvmult(coarse_grid_corrections[k], x[k+1]);
 
         x[k] += coarse_grid_corrections[k];
 
@@ -138,16 +136,12 @@ class MultigridPreconditioner {
 
       mutable SparseDirectUMFPACK solver2;
 
-      std::vector<LinearOperator<Vector<double>>> restrictions;
-
       std::vector<PreconditionSSOR<SparseMatrix<double>>> preconditioners;
       std::vector<LinearOperator<Vector<double>>> smoothers;
-
-      std::vector<std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>>> not_trivial_prolongations_dof;
 
       mutable std::vector<Vector<double>> x, rhs, residual, coarse_grid_corrections;
 
       std::vector<unsigned int> n_dofs;
 
-      std::vector<SparseMatrix<double>> & prolongations;
+      std::vector<SparseMatrix<double>> & restrictions;
 };

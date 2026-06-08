@@ -3,6 +3,7 @@
 #include <deal.II/base/exceptions.h>
 #include <fstream>
 
+#include <iterator>
 #include<stack>
 
 void
@@ -63,44 +64,51 @@ Graph::get_number_of_cells() {
   return cells.size();
 }
 
+bool
+Graph::is_simple() {
+  for (const auto & big_cell : big_cells) {
+    if (big_cell.n_of_cells > 1) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 Graph
-Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex_map,
+Graph::get_coarser_graph(RestrictionMap & vertex_restriction_map, double length_treshold)
+{
+  if (is_simple()) {
+    return get_coarser_graph_lort(vertex_restriction_map);    
+  }
+  else {
+    return get_coarser_graph_lort(vertex_restriction_map);    
+  }
+}
+
+Graph
+Graph::get_classic_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex_map,
   std::map<int, int> & coarse_to_fine_cell_map,
-  double coarsening_percentage,
-  const std::vector<double> & resistances) {
+  double length_treshold) {
 
   Graph result;
 
-  std::vector<double> lengths;
-
-  std::ofstream out("a.txt");
-  for (const auto & cell : cells) {
-    double cell_length = (points[cell.vertices[1]] - points[cell.vertices[0]]).norm_square();
-    out << cell.vertices[0] << " " << cell.vertices[1] << " " << cell_length << "\n";
+  if (!is_simple()) {
+    std::cout<<"ERROR: Before performing non-nested coarsening, the graph must not contain any edges with multiple cells. \n";
+    return result;
   }
-  out.close();
+
+  std::vector<double> lengths;
 
   int current_cell = 0;
   for (const auto & cell : cells) {
-    if (adiacency[cell.vertices[1]].size() > 1 && adiacency[cell.vertices[0]].size() > 1 ) {
-      lengths.push_back(resistances[current_cell]);
-    }
+    double cell_length = (points[cell.vertices[1]] - points[cell.vertices[0]]).norm_square();
+    lengths.push_back(cell_length);
     current_cell++;
   }
 
-  std::sort(lengths.begin(), lengths.end(), [](const double & a, const double & b) {
-    return a < b;
-  });
-
-  /*
-  for (int i = 0; i < cells.size(); i++) {
-    len << lengths[i] << "\n";
-  }
-  */
-
   unsigned int n_cells = cells.size();
-
-  double median = lengths[(lengths.size() - 1) * coarsening_percentage] *1.00001;
+  unsigned int n_points = points.size();
 
   std::map<int, int> fine_to_coarse_vertex_map;
 
@@ -113,7 +121,7 @@ Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex
 
   //Vettore che contiene true alla posizione i se l'i-esimo vertice
   //è da collassare (Non so come altro fare, forse c'è un modo migliore)
-  std::vector<bool> is_collapsed(n_cells + 1, false);
+  std::vector<bool> is_collapsed(n_points, false);
 
   //I vertici da collassare, raggruppati per componente connessa
   std::vector<std::vector<int>> to_collapse_vertices;
@@ -148,9 +156,9 @@ Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex
         if (!visited_cell[to_visit_cell]) {
           int other_vertex_cell = cells[to_visit_cell].vertices[1]+cells[to_visit_cell].vertices[0] - visiting_vertex;
 
-          if (resistances[to_visit_cell] < median 
-              && adiacency[other_vertex_cell].size() > 1 && adiacency[visiting_vertex].size() > 1
-              && visiting_vertex != 0 ) {
+          if (lengths[to_visit_cell] < length_treshold 
+              && adiacency[other_vertex_cell].size() > 0 && adiacency[visiting_vertex].size() > 0
+               ) {
             short_mode = true;
             break;
           }
@@ -169,9 +177,8 @@ Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex
 
       if (!visited_cell[to_visit_cell]) {
 
-        if (short_mode && resistances[to_visit_cell] < median 
-            && adiacency[other_vertex_cell].size() > 1 && adiacency[visiting_vertex].size() > 1
-            && visiting_vertex != 0) {
+        if (short_mode && lengths[to_visit_cell] < length_treshold 
+            && adiacency[other_vertex_cell].size() > 0 && adiacency[visiting_vertex].size() > 0) {
           to_visit_short_vertices.push(other_vertex_cell);
         }
         else {
@@ -192,7 +199,7 @@ Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex
 
   //Creo i punti
   {
-    for (unsigned int i = 0; i < n_cells + 1; i++) {
+    for (unsigned int i = 0; i < n_points; i++) {
       if (!is_collapsed[i]){
         result.add_point(points[i]);
 
@@ -251,42 +258,110 @@ Graph::get_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex
   return result;
 }
 
+/*
+Graph
+Graph::get_classic_coarser_graph(double length_treshold)
+{
+  //Uso norm square sulle celle per non fare tutte le radici quadrate
+  length_treshold = length_treshold*length_treshold;
+
+  Graph result; 
+
+  std::set<int> to_delete_big_cells;
+  std::map<int,std::vector<Point<3>>> aliases;
+  
+  std::map<int, std::vector<int>> fine_to_coarse_vertex_map;
+
+  //Controllo quali celle sono da eliminare e creo già il punto che le rimpiazza
+  for (unsigned int i = 0; i < big_cells.size(); i++) {
+    const auto & big_cell = big_cells[i];
+
+    if(big_cell.n_of_cells == 1) {
+      double cell_length = (points[big_cell.node1] - points[big_cell.node2]).norm_square();
+
+      if (cell_length < length_treshold) {
+        Point<3> new_point = (points[big_cell.node1] + points[big_cell.node2]);
+        new_point = new_point * 0.5;
+
+        aliases[big_cell.node1].push_back(new_point);
+        aliases[big_cell.node2].push_back(new_point);
+
+        to_delete_big_cells.insert(i);
+      }
+    }
+  }
+
+  for (unsigned int i = 0; i < big_cells.size(); i++) {
+    const auto & big_cell = big_cells[i];
+
+    if (to_delete_big_cells.count(i) == 0) {
+      BigCell new_big_cell;
+
+      //Se non c'è già, creo il punto
+      if (fine_to_coarse_vertex_map.count(big_cell.node1) == 0) {
+
+        //Se questo punto è stato schiacciato
+        if (aliases.count(big_cell.node1) > 0) {
+          for (const auto & point : aliases[big_cell.node1]) {
+            result.add_point(aliases[big_cell.node1]);
+          }
+        }
+        //Altrimenti prendo il punto vecchio
+        else {
+          result.add_point();
+        }
+      }
+      new_big_cell.node1 = fine_to_coarse_vertex_map[big_cell.node1];
+
+      //Da cambiare
+
+      new_big_cell.node2 = fine_to_coarse_vertex_map[big_cell.node2];
+
+    }
+  }
+
+}
+*/
 
 Graph
-Graph::get_coarser_graph_lort(std::map<int, int> & coarse_to_fine_vertex_map, 
-  std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>> & not_trivial_prolongation) {
-
+Graph::get_coarser_graph_lort(RestrictionMap & vertex_restriction_map) {
   Graph result;
   
   std::map<int, int> fine_to_coarse_vertex_map;
 
-  bool no_remove = false;
-
-  int i = 0;
-
   for(const auto & big_cell : big_cells) {
+    coarse_big_cell(result, big_cell, vertex_restriction_map, fine_to_coarse_vertex_map);
+  }
+
+  //Le big cell sono le stesse
+  result.dirichlet_big_cells = this -> dirichlet_big_cells;
+  result.neumann_big_cells = this -> neumann_big_cells;
+
+  return result;
+}
+
+void
+Graph::coarse_big_cell(Graph & result, const BigCell & big_cell, 
+    RestrictionMap & vertex_restriction_map,
+    std::map<int, int> & fine_to_coarse_vertex_map)
+{
+    //not_trivial_restriction
     int n_coarse_cell = 0;
     int coarse_cell_start = -1;
     int coarse_cell_end = -1;
-
-    i++;
-    //std::cout<<i<<"\n";
     
+    bool no_remove = false;
     if(big_cell.n_of_cells <= 5 && big_cell.node1 == big_cell.node2)
-    {
       no_remove = true;
-    }
-    else
-    {
-      no_remove = false;
-    }
-
+  
     //Se il primo vertice non è presente, lo aggiungo
     if (fine_to_coarse_vertex_map.count(big_cell.node1) == 0) {
       result.add_point(points[big_cell.node1]);
       fine_to_coarse_vertex_map[big_cell.node1] = result.points.size()-1;
 
-      coarse_to_fine_vertex_map[result.points.size()-1] = big_cell.node1;
+      //coarse_to_fine_vertex_map[result.points.size()-1] = big_cell.node1;
+      //vertex_restriction_map[result.points.size()-1].push_back(std::pair<int,double>(big_cell.node1, 1.));
+      vertex_restriction_map[big_cell.node1].push_back(std::pair<int,double>(result.points.size()-1, 1.));
     }
 
     int to_remove = 0;
@@ -310,8 +385,9 @@ Graph::get_coarser_graph_lort(std::map<int, int> & coarse_to_fine_vertex_map,
           result.add_point(points[current_vertex]);
           fine_to_coarse_vertex_map[current_vertex] = result.points.size() - 1;
 
-          coarse_to_fine_vertex_map[result.points.size()-1] = current_vertex;
-
+          //coarse_to_fine_vertex_map[result.points.size()-1] = current_vertex;
+          //vertex_restriction_map[result.points.size()-1].push_back(std::pair<int,double>(current_vertex, 1.));
+          vertex_restriction_map[current_vertex].push_back(std::pair<int,double>(result.points.size()-1, 1.));
 
           //Aggiungi il collegamento con il punto precedente
           result.add_cell(fine_to_coarse_vertex_map[last_hold_vertex], fine_to_coarse_vertex_map[current_vertex]);
@@ -347,7 +423,9 @@ Graph::get_coarser_graph_lort(std::map<int, int> & coarse_to_fine_vertex_map,
           left_vertex_pair.second = right_cell_length/(left_cell_length + right_cell_length);
           right_vertex_pair.second = left_cell_length/(left_cell_length + right_cell_length);
 
-          not_trivial_prolongation[current_vertex] = std::make_pair(left_vertex_pair, right_vertex_pair);
+          //not_trivial_restriction[current_vertex] = std::make_pair(left_vertex_pair, right_vertex_pair);
+          vertex_restriction_map[current_vertex].push_back(left_vertex_pair);
+          vertex_restriction_map[current_vertex].push_back(right_vertex_pair);
         }
 
         //Cambia cella
@@ -360,8 +438,9 @@ Graph::get_coarser_graph_lort(std::map<int, int> & coarse_to_fine_vertex_map,
       result.add_point(points[big_cell.node2]);
       fine_to_coarse_vertex_map[big_cell.node2] = result.points.size()-1;
 
-      coarse_to_fine_vertex_map[result.points.size()-1] = big_cell.node2;
-
+      //coarse_to_fine_vertex_map[result.points.size()-1] = big_cell.node2;
+      //vertex_restriction_map[result.points.size()-1].push_back(std::pair<int,double>(big_cell.node2, 1.));
+      vertex_restriction_map[big_cell.node2].push_back(std::pair<int,double>(result.points.size()-1, 1.));
     }
 
     //Devo creare il ponte tra l'ultimo vertice e il node2
@@ -377,13 +456,6 @@ Graph::get_coarser_graph_lort(std::map<int, int> & coarse_to_fine_vertex_map,
     result.add_big_cell(fine_to_coarse_vertex_map[big_cell.node1], fine_to_coarse_vertex_map[big_cell.node2],
       coarse_cell_start, coarse_cell_end,
       n_coarse_cell);
-  }
-
-  //Le big cell sono le stesse
-  result.dirichlet_big_cells = this -> dirichlet_big_cells;
-  result.neumann_big_cells = this -> neumann_big_cells;
-
-  return result;
 }
 
 Graph

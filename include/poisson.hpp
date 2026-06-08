@@ -197,10 +197,7 @@ private:
   std::vector<std::shared_ptr<MG_Level>> mg_levels;
   std::vector<std::map<int, int>> coarse_to_fine_dof_maps;
 
-  //l'i-esimo va da livello[i+1] a livello[i]
-  std::vector<std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>>> not_trivial_prolongations_dof;
-
-  std::vector<DynamicSparsityPattern> prolongation_dynamic_patterns;
-  std::vector<SparsityPattern> prolongation_sparsity_patterns;
-  std::vector<SparseMatrix<double>> prolongations;
+  std::vector<DynamicSparsityPattern> restriction_dynamic_patterns;
+  std::vector<SparsityPattern> restriction_sparsity_patterns;
+  std::vector<SparseMatrix<double>> restrictions;
 };

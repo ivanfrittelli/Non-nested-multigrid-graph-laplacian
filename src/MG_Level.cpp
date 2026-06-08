@@ -18,10 +18,10 @@ MG_Level::setup_boundary_conditions(const std::set<int> & dirichlet_cells, const
     for (const auto &cell : triangulation.active_cell_iterators()) {
         if (cell-> face(i) -> at_boundary()) {
           if (dirichlet_cells.count(cell->active_cell_index()) > 0) {
-            cell -> face(i) -> set_boundary_id(2);
+            cell -> face(i) -> set_boundary_id(1);
           }
           else if(neumann_cells.count(cell->active_cell_index()) > 0) {
-            cell -> face(i) -> set_boundary_id(1);
+            cell -> face(i) -> set_boundary_id(2);
           }
           else {
             cell -> face(i) -> set_boundary_id(0);
@@ -38,7 +38,7 @@ MG_Level::setup_system(const Function<3> & boundary_conditions) {
   constraints.clear();
 
   VectorTools::interpolate_boundary_values(dof_handler,
-                                        2,
+                                        1,
                                         boundary_conditions,
                                         constraints);
 
@@ -96,7 +96,7 @@ MG_Level::assemble_system(const TimeInfo & time_info, const Vector<double> & rad
 
               if (!time_info.is_time_dependent) {
                 cell_matrix(i, j) +=
-                  std::pow(radii[graph.small_to_big_cell_map[cell -> active_cell_index()]], 4) * 3.1415 *
+                  //std::pow(radii[graph.small_to_big_cell_map[cell -> active_cell_index()]], 4) * 3.1415 *
                   (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
                   fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
                   fe_values.JxW(q_index));           // dx
@@ -112,6 +112,7 @@ MG_Level::assemble_system(const TimeInfo & time_info, const Vector<double> & rad
                   fe_values.shape_value(j, q_index) * // grad phi_j(x_q)
                   fe_values.JxW(q_index);
               }
+
                 
             }
               
@@ -119,16 +120,21 @@ MG_Level::assemble_system(const TimeInfo & time_info, const Vector<double> & rad
 
       cell->get_dof_indices(local_dof_indices);
 
-      //constraints.distribute_local_to_global(
-      //    cell_matrix, local_dof_indices, system_matrix);
+      constraints.distribute_local_to_global(
+          cell_matrix, local_dof_indices, system_matrix);
 
+
+    /*
     for (const unsigned int i : fe_values.dof_indices())
         {
-          for (const unsigned int j : fe_values.dof_indices())
+          for (const unsigned int j : fe_values.dof_indices()) {
             system_matrix.add(local_dof_indices[i],
                               local_dof_indices[j],
                               cell_matrix(i, j));
+
+          }
         }
+      */
 
     }
 
@@ -201,7 +207,7 @@ MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
                           fe_values.JxW(q_index));            // dx
 
             for (const auto &f : cell->face_indices())
-              if (cell->face(f)->at_boundary() && cell->face(f)->boundary_id() == 1)
+              if (cell->face(f)->at_boundary() && cell->face(f)->boundary_id() == 2)
                 {
                   fe_face_values.reinit(cell, f);
 
@@ -221,14 +227,14 @@ MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
 
       cell->get_dof_indices(local_dof_indices);
 
-      for (const unsigned int i : fe_values.dof_indices())
-        {
-          rhs(local_dof_indices[i]) += cell_rhs(i);
-        }
+      //for (const unsigned int i : fe_values.dof_indices())
+      //  {
+      //    rhs(local_dof_indices[i]) += cell_rhs(i);
+      //  }
 
 
-      //constraints.distribute_local_to_global(
-      //    cell_rhs, local_dof_indices, rhs);
+      constraints.distribute_local_to_global(
+          cell_rhs, local_dof_indices, rhs);
       
     }
 
@@ -252,7 +258,7 @@ MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
                             fe_values.JxW(q_index));            // dx
 
               for (const auto &f : cell->face_indices())
-                if (cell->face(f)->at_boundary() && cell->face(f)->boundary_id() == 1)
+                if (cell->face(f)->at_boundary() && cell->face(f)->boundary_id() == 2)
                   {
                     fe_face_values.reinit(cell, f);
 
@@ -272,13 +278,13 @@ MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
 
         cell->get_dof_indices(local_dof_indices);
 
-        //constraints.distribute_local_to_global(
-        //  cell_rhs, local_dof_indices, rhs);
+        constraints.distribute_local_to_global(
+          cell_rhs, local_dof_indices, rhs);
 
-        for (const unsigned int i : fe_values.dof_indices())
-        {
-          rhs(local_dof_indices[i]) += cell_rhs(i);
-        }
+        //for (const unsigned int i : fe_values.dof_indices())
+        //{
+        //  rhs(local_dof_indices[i]) += cell_rhs(i);
+        //}
     }
 
   }
@@ -299,7 +305,7 @@ MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
                             fe_values.JxW(q_index));            // dx
 
               for (const auto &f : cell->face_indices())
-                if (cell->face(f)->at_boundary() && cell->face(f)->boundary_id() == 1)
+                if (cell->face(f)->at_boundary() && cell->face(f)->boundary_id() == 2)
                   {
                     fe_face_values.reinit(cell, f);
 
@@ -318,13 +324,13 @@ MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
 
         cell->get_dof_indices(local_dof_indices);
 
-        for (const unsigned int i : fe_values.dof_indices())
-        {
-          rhs(local_dof_indices[i]) += cell_rhs(i);
-        }
+        //for (const unsigned int i : fe_values.dof_indices())
+        //{
+        //  rhs(local_dof_indices[i]) += cell_rhs(i);
+        //}
 
-        //constraints.distribute_local_to_global(
-        //  cell_rhs, local_dof_indices, rhs);
+        constraints.distribute_local_to_global(
+          cell_rhs, local_dof_indices, rhs);
     }
   }
 }

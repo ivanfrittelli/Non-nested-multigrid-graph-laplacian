@@ -18,6 +18,8 @@ class Graph {
   public:
     Graph() {}
 
+    using RestrictionMap = std::map<int, std::vector<std::pair<int,double>>>;
+
     void add_point(double x, double y, double z);
     void add_point(Point<3> point);
 
@@ -27,16 +29,24 @@ class Graph {
     int get_number_of_points();
     int get_number_of_cells();
 
+    bool is_simple();
+
     Triangulation<1,3> create_graph_triangulation();
 
     Graph get_coarser_graph(
+      RestrictionMap & vertex_prolongation_map,
+      double length_treshold
+    );
+
+    Graph get_classic_coarser_graph(
       std::map<int, std::vector<int>> & coarse_to_fine_vertex_map, 
       std::map<int, int> & coarse_to_fine_cell_map, 
-      double coarsening_percentage,
-      const std::vector<double> & resistances);
+      double length_treshold);
 
-    Graph get_coarser_graph_lort(
-      std::map<int, int> & coarse_to_fine_vertex_map, std::map<int, std::pair<std::pair<int, double>, std::pair<int, double>>> & not_trivial_prolongation);
+    Graph get_coarser_graph_lort(RestrictionMap & vertex_prolongation_map);
+
+    void coarse_big_cell(Graph & result, const BigCell & big_cell, 
+      RestrictionMap & vertex_prolongation_map, std::map<int, int> & fine_to_coarse_vertex_map);
 
     Graph get_finer_graph(int n_of_points_per_segment);
 
