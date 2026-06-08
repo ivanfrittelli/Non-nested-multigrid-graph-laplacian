@@ -69,7 +69,7 @@ MG_Level::setup_system(const Function<3> & boundary_conditions) {
 }
 
 void
-MG_Level::assemble_system(const TimeInfo & time_info, const Vector<double> & radii) {
+MG_Level::assemble_system(const FunctionParser<3> & reaction_term, const TimeInfo & time_info, const Vector<double> & radii) {
   
   QGauss<1>     quadrature_formula(fe.degree + 1);
 
@@ -89,61 +89,63 @@ MG_Level::assemble_system(const TimeInfo & time_info, const Vector<double> & rad
       fe_values.reinit(cell);
       cell_matrix = 0;
 
-      for (const unsigned int q_index : fe_values.quadrature_point_indices())
+      for (const unsigned int q_index : fe_values.quadrature_point_indices()) {
+
+        double reaction = reaction_term.value(fe_values.quadrature_point(q_index));
+
         for (const unsigned int i : fe_values.dof_indices())
-          {
-            for (const unsigned int j : fe_values.dof_indices()) {
+        {
+          for (const unsigned int j : fe_values.dof_indices()) {
 
-              if (!time_info.is_time_dependent) {
-                cell_matrix(i, j) +=
-                  //std::pow(radii[graph.small_to_big_cell_map[cell -> active_cell_index()]], 4) * 3.1415 *
-                  (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
-                  fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
-                  fe_values.JxW(q_index));           // dx
-              } else {
-                cell_matrix(i, j) += 
-                  radii[graph.small_to_big_cell_map[cell -> active_cell_index()]]*
-                  time_info.dt * time_info.theta * 
-                  (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
-                  fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
-                  fe_values.JxW(q_index));
+            if (time_info.is_time_dependent) {
+              cell_matrix(i, j) += 
+                radii[graph.small_to_big_cell_map[cell -> active_cell_index()]]*
+                time_info.dt * 
+                (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
+                fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
+                fe_values.JxW(q_index));
 
-                cell_matrix(i,j) += fe_values.shape_value(i, q_index) * // grad phi_i(x_q)
-                  fe_values.shape_value(j, q_index) * // grad phi_j(x_q)
-                  fe_values.JxW(q_index);
-              }
+              cell_matrix(i,j) += reaction * time_info.dt  *
+                (fe_values.shape_value(i, q_index) * // grad phi_i(x_q)
+                fe_values.shape_value(j, q_index) * // grad phi_j(x_q)
+                fe_values.JxW(q_index));
 
-                
-            }
+              cell_matrix(i,j) += fe_values.shape_value(i, q_index) * // grad phi_i(x_q)
+                fe_values.shape_value(j, q_index) * // grad phi_j(x_q)
+                fe_values.JxW(q_index);
               
+            } else {
+              cell_matrix(i, j) +=
+                std::pow(radii[graph.small_to_big_cell_map[cell -> active_cell_index()]], 4) * 3.1415 *
+                (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
+                fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
+                fe_values.JxW(q_index));           // dx
+
+              cell_matrix(i,j) += reaction *
+                (fe_values.shape_value(i, q_index) * // grad phi_i(x_q)
+                fe_values.shape_value(j, q_index) * // grad phi_j(x_q)
+                fe_values.JxW(q_index));
+            }
           }
+        }
+      }
+
 
       cell->get_dof_indices(local_dof_indices);
 
       constraints.distribute_local_to_global(
           cell_matrix, local_dof_indices, system_matrix);
 
-
-    /*
-    for (const unsigned int i : fe_values.dof_indices())
-        {
-          for (const unsigned int j : fe_values.dof_indices()) {
-            system_matrix.add(local_dof_indices[i],
-                              local_dof_indices[j],
-                              cell_matrix(i, j));
-
-          }
-        }
-      */
-
     }
 
 }
 
+
 void 
-MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
+MG_Level::assemble_system_and_rhs(const FunctionParser<3> & reaction_term,
+  const FunctionParser<3> & rhs_function,
   Vector<double> & rhs, 
-  FunctionParser<3> & neumann_function,
+  const FunctionParser<3> & neumann_function,
   const Vector<double> & old_solution,
   const TimeInfo & time_info,
   const Vector<double> & radii) 
@@ -167,42 +169,51 @@ MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
   const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
 
   Vector<double>     cell_rhs(dofs_per_cell);
+  FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
 
   std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
-  //Codice ridondante, da cambiare in futuro
-  if(time_info.is_time_dependent) {
-    std::vector<double> old_solution_values(fe_values.n_quadrature_points);
-    std::vector<Tensor<1,3>> old_solution_gradients(fe_values.n_quadrature_points);
+  std::vector<double> old_solution_values(fe_values.n_quadrature_points);
+  std::vector<Tensor<1,3>> old_solution_gradients(fe_values.n_quadrature_points);
 
-    for (const auto &cell : dof_handler.active_cell_iterators())
-    {
-      fe_values.reinit(cell);
+  for (const auto &cell : dof_handler.active_cell_iterators())
+  {
+    fe_values.reinit(cell);
 
+    if(time_info.is_time_dependent) {
       fe_values.get_function_values(old_solution, old_solution_values);
       fe_values.get_function_gradients(old_solution, old_solution_gradients);
+    }
 
-      cell_rhs    = 0;
+    cell_matrix = 0;
+    cell_rhs    = 0;
 
-      for (const unsigned int q_index : fe_values.quadrature_point_indices())
-        for (const unsigned int i : fe_values.dof_indices())
-          {
-            const auto &x_q = fe_values.quadrature_point(q_index);
+    for (const unsigned int q_index : fe_values.quadrature_point_indices()) {
+      const auto &x_q = fe_values.quadrature_point(q_index);
+      const double reaction = reaction_term.value(x_q);
+      
+      for (const unsigned int i : fe_values.dof_indices())
+      {
+          if(time_info.is_time_dependent) {      
+            for (const unsigned int j : fe_values.dof_indices()) {
+              cell_matrix(i, j) += 
+                radii[graph.small_to_big_cell_map[cell -> active_cell_index()]]*
+                time_info.dt * 
+                (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
+                fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
+                fe_values.JxW(q_index));
 
-            cell_rhs(i) += fe_values.shape_value(i, q_index)
-              * old_solution_values[q_index]
-              * fe_values.JxW(q_index);
+              cell_matrix(i,j) += reaction * time_info.dt  *
+                (fe_values.shape_value(i, q_index) * // grad phi_i(x_q)
+                fe_values.shape_value(j, q_index) * // grad phi_j(x_q)
+                fe_values.JxW(q_index));
 
-            cell_rhs(i) -= 
-                        std::pow(radii[graph.small_to_big_cell_map[cell -> active_cell_index()]], 4) * 3.1415 *
-                          time_info.dt * (1 - time_info.theta)
-                          * fe_values.shape_grad(i, q_index)
-                          * old_solution_gradients[q_index]
-                          * fe_values.JxW(q_index);
-            
-            cell_rhs(i) += 
-                          time_info.dt * (1 - time_info.theta) 
-                          *(fe_values.shape_value(i, q_index) * // phi_i(x_q)
+              cell_matrix(i,j) += fe_values.shape_value(i, q_index) * // grad phi_i(x_q)
+                fe_values.shape_value(j, q_index) * // grad phi_j(x_q)
+                fe_values.JxW(q_index);
+            }
+
+            cell_rhs(i) += time_info.dt * (fe_values.shape_value(i, q_index) * // phi_i(x_q)
                           rhs_function.value(x_q) *       // f(x_q)
                           fe_values.JxW(q_index));            // dx
 
@@ -216,124 +227,64 @@ MG_Level::assemble_rhs(FunctionParser<3> & rhs_function,
                         const auto neumann_function_value = neumann_function.value(fe_face_values.quadrature_point(q_index));
 
                         for (const unsigned int i : fe_face_values.dof_indices())
-                          cell_rhs(i) += time_info.dt * (1 - time_info.theta) *
+                          cell_rhs(i) += time_info.dt *
                             fe_face_values.shape_value(i, q_index) * // phi_i(x_q)
                             neumann_function_value * // g(x_q)
                             fe_face_values.JxW(q_index);                 // ds
                       }
                     
                 }
+
+            cell_rhs(i) += fe_values.shape_value(i, q_index)
+              * old_solution_values[q_index]
+              * fe_values.JxW(q_index);
           }
+          else{
+            cell_rhs(i) += //(i == inlet_dof ? 1:0)*
+              (fe_values.shape_value(i, q_index) * // phi_i(x_q)
+              rhs_function.value(x_q) *       // f(x_q)
+              fe_values.JxW(q_index));            // dx
 
-      cell->get_dof_indices(local_dof_indices);
+            for (const unsigned int j : fe_values.dof_indices()) {
+              cell_matrix(i, j) +=
+                std::pow(radii[graph.small_to_big_cell_map[cell -> active_cell_index()]], 4) * 3.1415 *
+                (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
+                fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
+                fe_values.JxW(q_index));           // dx
 
-      //for (const unsigned int i : fe_values.dof_indices())
-      //  {
-      //    rhs(local_dof_indices[i]) += cell_rhs(i);
-      //  }
+              cell_matrix(i,j) += reaction *
+                (fe_values.shape_value(i, q_index) * // grad phi_i(x_q)
+                fe_values.shape_value(j, q_index) * // grad phi_j(x_q)
+                fe_values.JxW(q_index));
+              }
 
+            for (const auto &f : cell->face_indices())
+              if (cell->face(f)->at_boundary() && cell->face(f)->boundary_id() == 2)
+                {
+                  fe_face_values.reinit(cell, f);
 
-      constraints.distribute_local_to_global(
-          cell_rhs, local_dof_indices, rhs);
-      
-    }
+                  for (const unsigned int q_index :
+                      fe_face_values.quadrature_point_indices()) {
+                        const auto neumann_function_value = neumann_function.value(fe_face_values.quadrature_point(q_index));
 
-    rhs_function.advance_time(time_info.dt);
-    neumann_function.advance_time(time_info.dt);
-
-    for (const auto &cell : dof_handler.active_cell_iterators()) {
-      fe_values.reinit(cell);
-
-      cell_rhs = 0;
-
-        for (const unsigned int q_index : fe_values.quadrature_point_indices())
-          for (const unsigned int i : fe_values.dof_indices())
-            {
-              const auto &x_q = fe_values.quadrature_point(q_index);
-
-              cell_rhs(i) += 
-                            time_info.dt * time_info.theta
-                            *(fe_values.shape_value(i, q_index) * // phi_i(x_q)
-                            rhs_function.value(x_q) *       // f(x_q)
-                            fe_values.JxW(q_index));            // dx
-
-              for (const auto &f : cell->face_indices())
-                if (cell->face(f)->at_boundary() && cell->face(f)->boundary_id() == 2)
-                  {
-                    fe_face_values.reinit(cell, f);
-
-                    for (const unsigned int q_index :
-                        fe_face_values.quadrature_point_indices()) {
-                          const auto neumann_function_value = neumann_function.value(fe_face_values.quadrature_point(q_index));
-
-                          for (const unsigned int i : fe_face_values.dof_indices())
-                            cell_rhs(i) += time_info.dt * time_info.theta *
-                              fe_face_values.shape_value(i, q_index) * // phi_i(x_q)
-                              neumann_function_value * // g(x_q)
-                              fe_face_values.JxW(q_index);                 // ds
-                        }
-                      
-                  }
-            }
-
-        cell->get_dof_indices(local_dof_indices);
-
-        constraints.distribute_local_to_global(
-          cell_rhs, local_dof_indices, rhs);
-
-        //for (const unsigned int i : fe_values.dof_indices())
-        //{
-        //  rhs(local_dof_indices[i]) += cell_rhs(i);
-        //}
-    }
-
-  }
-  else {
-    for (const auto &cell : dof_handler.active_cell_iterators())
-    {
-      fe_values.reinit(cell);
-
-      cell_rhs    = 0;
-
-      for (const unsigned int q_index : fe_values.quadrature_point_indices())
-        for (const unsigned int i : fe_values.dof_indices())
-          {
-            const auto &x_q = fe_values.quadrature_point(q_index);
-              cell_rhs(i) += //(i == inlet_dof ? 1:0)*
-                            (fe_values.shape_value(i, q_index) * // phi_i(x_q)
-                            rhs_function.value(x_q) *       // f(x_q)
-                            fe_values.JxW(q_index));            // dx
-
-              for (const auto &f : cell->face_indices())
-                if (cell->face(f)->at_boundary() && cell->face(f)->boundary_id() == 2)
-                  {
-                    fe_face_values.reinit(cell, f);
-
-                    for (const unsigned int q_index :
-                        fe_face_values.quadrature_point_indices()) {
-                          const auto neumann_function_value = neumann_function.value(fe_face_values.quadrature_point(q_index));
-
-                          for (const unsigned int i : fe_face_values.dof_indices())
-                            cell_rhs(i) += fe_face_values.shape_value(i, q_index) * // phi_i(x_q)
-                              neumann_function_value * // g(x_q)
-                              fe_face_values.JxW(q_index);                 // ds
-                        }
-                      
-                  }
+                        for (const unsigned int i : fe_face_values.dof_indices())
+                          cell_rhs(i) += fe_face_values.shape_value(i, q_index) * // phi_i(x_q)
+                            neumann_function_value * // g(x_q)
+                            fe_face_values.JxW(q_index);                 // ds
+                      }
+                    
+                }
           }
-
-        cell->get_dof_indices(local_dof_indices);
-
-        //for (const unsigned int i : fe_values.dof_indices())
-        //{
-        //  rhs(local_dof_indices[i]) += cell_rhs(i);
-        //}
-
-        constraints.distribute_local_to_global(
-          cell_rhs, local_dof_indices, rhs);
+      }
     }
+        
+    cell->get_dof_indices(local_dof_indices);
+
+    constraints.distribute_local_to_global(
+        cell_matrix, cell_rhs, local_dof_indices, system_matrix, rhs);      
   }
 }
+
 
 std::map<int, int>
 MG_Level::get_dof_to_vertex_map() {

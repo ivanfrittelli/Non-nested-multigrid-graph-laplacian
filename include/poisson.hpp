@@ -55,7 +55,6 @@ struct PoissonParameters
       prm.add_parameter("Time dependent", is_time_dependent);
       prm.add_parameter("Number of time steps", time_steps);
       prm.add_parameter("Time step length", time_step_length);
-      prm.add_parameter("Theta", theta);
     }
     prm.leave_subsection();
 
@@ -81,7 +80,7 @@ struct PoissonParameters
       prm.add_parameter("Time zero solution", initial_solution_expression);
       prm.add_parameter("Arterioles neumann boundary condition", neumann_expression);
       prm.add_parameter("Venules dirichlet boundary condition", exact_solution_expression);
-
+      prm.add_parameter("Reaction term", reaction_term_expression);
       prm.add_parameter("Right hand side expression", rhs_expression);
     }
     prm.leave_subsection();
@@ -116,6 +115,11 @@ struct PoissonParameters
                                 {neumann_expression},
                                 constants, is_time_dependent);
 
+    reaction_term.initialize(variables,
+                                {reaction_term_expression},
+                                constants, is_time_dependent);
+
+
     //(Per ora) non è time dependent
     //Mi sembra realistico che a cambiare sia il flusso di sangue all'entrata
     //Mentre la pressione in uscita sia sempre la stessa
@@ -133,7 +137,6 @@ struct PoissonParameters
   //Time
   int time_steps = 10;
   double time_step_length = 0.1;
-  double theta = 1;
   bool is_time_dependent = false;
 
   //Mesh
@@ -157,6 +160,8 @@ struct PoissonParameters
   mutable FunctionParser<3> exact_solution;
   std::string  rhs_expression            = "1";
   mutable FunctionParser<3> rhs_function;
+  std::string  reaction_term_expression  = "0";
+  mutable FunctionParser<3> reaction_term;
 
   mutable ParsedConvergenceTable convergence_table;
 
@@ -179,8 +184,6 @@ private:
   refine();
   void
   setup_system();
-  void
-  assemble_system();
   void
   solve();
   void

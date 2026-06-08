@@ -66,11 +66,12 @@ class MG_Level {
     setup_system(const Function<3> & boundary_conditions);
 
     void
-    assemble_system(const TimeInfo & time_info, const Vector<double> & radii);
+    assemble_system(const FunctionParser<3> & reaction_term, const TimeInfo & time_info, const Vector<double> & radii);
 
     void
-    assemble_rhs(FunctionParser<3> & rhs_function, Vector<double> & rhs, 
-      FunctionParser<3> & neumann_function,
+    assemble_system_and_rhs(const FunctionParser<3> & reaction_term, 
+      const FunctionParser<3> & rhs_function, Vector<double> & rhs, 
+      const FunctionParser<3> & neumann_function,
       const Vector<double> & old_solution, 
       const TimeInfo & time_info,
       const Vector<double> & radii);

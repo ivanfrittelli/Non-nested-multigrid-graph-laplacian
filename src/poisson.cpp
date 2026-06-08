@@ -193,26 +193,12 @@ Poisson::setup_system()
 }
 
 void
-Poisson::assemble_system()
-{
-  TimeInfo time_info;
-  time_info.dt = par.time_step_length;
-  time_info.theta = par.theta;
-  time_info.is_time_dependent = par.is_time_dependent;
-
-  for (unsigned int i = 0; i < par.n_v_cycles; i++) {
-    mg_levels[i] -> assemble_system(time_info, radii);
-  }
-}
-
-void
 Poisson::solve()
 {
   Timer tim;
     
   TimeInfo time_info;
   time_info.dt = par.time_step_length;
-  time_info.theta = par.theta;
   time_info.is_time_dependent = par.is_time_dependent;
 
   //No mg solution compute only fist step (for time dependent problem).
@@ -227,7 +213,7 @@ Poisson::solve()
 
     //mg_levels[0] -> constraints.print(std::cout);
 
-    mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
+    mg_levels[0] -> assemble_system_and_rhs(par.reaction_term, par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
 
     solver_2.solve(mg_levels[0] -> system_matrix, no_mg_solution, system_rhs, preconditioner);
     mg_levels[0] -> constraints.distribute(no_mg_solution);
@@ -261,11 +247,20 @@ Poisson::solve()
         std::cout<<"\n";
       }
       */
-
       
       //Con il ciclo scritto così, se non è time dependent, esegue solo uno step, come giusto che sia
       do {
-        mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
+        mg_levels[0] -> assemble_system_and_rhs(par.reaction_term, par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
+
+        //Nei sottolivelli non devo assemblare l rhs
+        for (unsigned int j = 1; j < par.n_v_cycles; j++) {
+          mg_levels[j] -> assemble_system(par.reaction_term, time_info, radii);
+        }
+        my_preconditioner.setup_coarse_grid_solver();
+
+        par.rhs_function.advance_time(time_info.dt);
+        par.neumann_function.advance_time(time_info.dt);
+        par.reaction_term.advance_time(time_info.dt);
 
         tim.restart();
         solver.solve(mg_levels[0] -> system_matrix, solution, system_rhs, my_preconditioner);
@@ -350,9 +345,7 @@ Poisson::run()
   std::cout<<"Inizializzazione sistema. \n";
 
   setup_system();
-  std::cout<<"Assemblaggio sistema. \n";
 
-  assemble_system();
   std::cout<<"Risoluzione sistema. \n";
 
   solve();

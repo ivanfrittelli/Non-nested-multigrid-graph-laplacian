@@ -44,10 +44,7 @@ class MultigridPreconditioner {
         residual[i].reinit(n_dofs[i]);
         rhs[i].reinit(n_dofs[i]);
         coarse_grid_corrections[i].reinit(n_dofs[i]);
-      }
-
-      solver2.initialize(mg_levels[mg_levels.size()-1] -> system_matrix);
-      
+      }      
       
           /*  for (int k = 0; k < 2; k++)
       for (int i = 0; i < n_dofs[k]; i++) {
@@ -67,6 +64,10 @@ class MultigridPreconditioner {
         restrictions[0].vmult(e2, e1);
         std::cout<<e2 << "\n";
       }*/
+    }
+
+    void setup_coarse_grid_solver() {
+      solver2.initialize(mg_levels[mg_levels.size()-1] -> system_matrix);
     }
 
     void vmult(VectorType &my_dst,
