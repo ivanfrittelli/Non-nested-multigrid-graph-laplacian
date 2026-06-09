@@ -1,6 +1,7 @@
 #include "../include/MG_Level.hpp"
 
 #include <Kokkos_Pair.hpp>
+#include <cstdlib>
 #include <deal.II/base/numbers.h>
 #include <deal.II/fe/fe_values.h>
 #include <iostream>
@@ -151,6 +152,7 @@ MG_Level::assemble_system_and_rhs(const FunctionParser<3> & reaction_term,
   const Vector<double> & radii) 
 {
   rhs = 0;
+  system_matrix = 0;
 
   QGauss<1>     quadrature_formula(fe.degree + 1);
   QGauss<0> face_quadrature_formula(fe.degree + 1);

@@ -39,16 +39,13 @@ class Graph {
     );
 
     Graph get_classic_coarser_graph(
-      std::map<int, std::vector<int>> & coarse_to_fine_vertex_map, 
-      std::map<int, int> & coarse_to_fine_cell_map, 
+      RestrictionMap & vertex_prolongation_map,
       double length_treshold);
 
     Graph get_coarser_graph_lort(RestrictionMap & vertex_prolongation_map);
 
     void coarse_big_cell(Graph & result, const BigCell & big_cell, 
       RestrictionMap & vertex_prolongation_map, std::map<int, int> & fine_to_coarse_vertex_map);
-
-    Graph get_finer_graph(int n_of_points_per_segment);
 
     std::vector<Point<3>> points;
     std::vector<CellData<1>> cells;

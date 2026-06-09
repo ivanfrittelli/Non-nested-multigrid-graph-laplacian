@@ -101,8 +101,19 @@ class MultigridPreconditioner {
         restrictions[k].vmult(rhs[k+1], residual[k]);
       }
 
+
+      /*
+      auto restriction_operator = linear_operator(restrictions[0]);
+      auto coarse_grid_solver = restriction_operator 
+        * linear_operator(mg_levels[0] -> system_matrix)
+        * transpose_operator(restriction_operator);
+      
+      SolverControl            solver_control(1000, 1e-12);
+      SolverCG<Vector<double>> solver(solver_control);
+      solver.solve(coarse_grid_solver, x[n_of_levels-1], rhs[n_of_levels-1], PreconditionIdentity());
+      */
+
       //Coarse grid solver
-      //mg_levels[n_of_levels-1] -> constraints.condense(mg_levels[n_of_levels-1] -> system_matrix, rhs[n_of_levels-1]);
       solver2.vmult(x[n_of_levels-1], rhs[n_of_levels-1]);
       mg_levels[n_of_levels-1] -> constraints.distribute(x[n_of_levels-1]);
 

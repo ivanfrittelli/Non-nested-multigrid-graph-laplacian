@@ -67,7 +67,7 @@ Graph::get_number_of_cells() {
 bool
 Graph::is_simple() {
   for (const auto & big_cell : big_cells) {
-    if (big_cell.n_of_cells > 1) {
+    if (big_cell.n_of_cells > 1 && !(big_cell.n_of_cells <= 5 && big_cell.node1 == big_cell.node2)) {
       return false;
     }
   }
@@ -80,6 +80,7 @@ Graph::get_coarser_graph(RestrictionMap & vertex_restriction_map, double length_
 {
   if (is_simple()) {
     return get_coarser_graph_lort(vertex_restriction_map);    
+    //return get_classic_coarser_graph(vertex_restriction_map, length_treshold);    
   }
   else {
     return get_coarser_graph_lort(vertex_restriction_map);    
@@ -87,9 +88,11 @@ Graph::get_coarser_graph(RestrictionMap & vertex_restriction_map, double length_
 }
 
 Graph
-Graph::get_classic_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fine_vertex_map,
-  std::map<int, int> & coarse_to_fine_cell_map,
+Graph::get_classic_coarser_graph(RestrictionMap & vertex_restriction_map,
   double length_treshold) {
+
+  //std::map<int, std::vector<int>> & coarse_to_fine_vertex_map,
+  std::map<int, int> coarse_to_fine_cell_map;
 
   Graph result;
 
@@ -100,11 +103,16 @@ Graph::get_classic_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fin
 
   std::vector<double> lengths;
 
-  int current_cell = 0;
+  length_treshold = length_treshold * length_treshold;
+
+  int k = 0;
+
   for (const auto & cell : cells) {
     double cell_length = (points[cell.vertices[1]] - points[cell.vertices[0]]).norm_square();
     lengths.push_back(cell_length);
-    current_cell++;
+
+    if (cell_length > length_treshold) k++;
+    else k--;
   }
 
   unsigned int n_cells = cells.size();
@@ -205,7 +213,8 @@ Graph::get_classic_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fin
 
         fine_to_coarse_vertex_map[i] = result.get_number_of_points() - 1;
 
-        coarse_to_fine_vertex_map[result.get_number_of_points() - 1].push_back(i);
+        //coarse_to_fine_vertex_map[result.get_number_of_points() - 1].push_back(i);
+        vertex_restriction_map[i].push_back(std::pair<int,double>(result.points.size()-1, 1.));
       } 
     }
 
@@ -221,8 +230,8 @@ Graph::get_classic_coarser_graph(std::map<int, std::vector<int>> & coarse_to_fin
 
         fine_to_coarse_vertex_map[connected_componet[i]] = old_vertices+j;
 
-
-        coarse_to_fine_vertex_map[old_vertices+j].push_back(connected_componet[i]);
+        //coarse_to_fine_vertex_map[old_vertices+j].push_back(connected_componet[i]);
+        vertex_restriction_map[connected_componet[i]].push_back(std::pair<int,double>(old_vertices+j, 1./connected_componet.size()));
       }
 
       //Il punto in mezzo
@@ -456,37 +465,4 @@ Graph::coarse_big_cell(Graph & result, const BigCell & big_cell,
     result.add_big_cell(fine_to_coarse_vertex_map[big_cell.node1], fine_to_coarse_vertex_map[big_cell.node2],
       coarse_cell_start, coarse_cell_end,
       n_coarse_cell);
-}
-
-Graph
-Graph::get_finer_graph(int n_of_points_per_segment) {
-  Graph finer_graph;
-
-  for (const auto & point : points) {
-    finer_graph.add_point(point);
-  }
-
-  for (const auto & cell : cells) {
-    Point<3> a = points[cell.vertices[0]];
-    Point<3> b = points[cell.vertices[1]];
-
-    for (int i = 0; i < n_of_points_per_segment; i++) {
-      //Per esempio, se n_of_points_per_segment = 2, ho che
-      //Per i = 0, ho a * (1/3) + b * (2/3)
-      //Per i = 1, ho a * (2/3) + b * (1/3)
-      Point<3> new_point = (a * double(i+1) + b * double(n_of_points_per_segment - i)) /double(n_of_points_per_segment + 1);
-
-      finer_graph.add_point(new_point);
-
-      if (i == 0)
-        finer_graph.add_cell(cell.vertices[0], finer_graph.get_number_of_points() - 1);
-      else
-        finer_graph.add_cell(finer_graph.get_number_of_points() - 2, finer_graph.get_number_of_points() - 1);
-
-    }
-
-    finer_graph.add_cell(finer_graph.get_number_of_points() - 1, cell.vertices[1]);
-  }
-
-  return finer_graph;
 }

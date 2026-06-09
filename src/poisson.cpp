@@ -61,7 +61,7 @@ Poisson::make_grid()
   }
   
 
-  double treshold = 10;
+  double treshold = 1.03;
 
   restriction_dynamic_patterns.resize(par.n_v_cycles - 1);
   restriction_sparsity_patterns.resize(par.n_v_cycles - 1);
@@ -127,7 +127,6 @@ Poisson::make_grid()
     /*
     std::ofstream out("re.txt");
     
-    if (i > 1)
     for (int k = 0; k < mg_levels[i] -> dof_handler.n_dofs(); k++) {
       for (int j = 0; j < mg_levels[i-1] -> dof_handler.n_dofs(); j++) {
         out<<restrictions[i-1].el(k,j) << " ";
@@ -185,10 +184,6 @@ Poisson::setup_system()
   solution.reinit(mg_levels[0] -> dof_handler.n_dofs());
   no_mg_solution.reinit(mg_levels[0] -> dof_handler.n_dofs());
 
-  VectorTools::interpolate(mg_levels[0] -> dof_handler, 
-                        par.initial_solution, 
-                        solution);
-
   system_rhs.reinit(mg_levels[0] -> dof_handler.n_dofs());
 }
 
@@ -203,9 +198,6 @@ Poisson::solve()
 
   //No mg solution compute only fist step (for time dependent problem).
   if (par.compute_no_mg_solution) {
-    PreconditionSSOR<SparseMatrix<double>> preconditioner;
-    preconditioner.initialize(mg_levels[0] -> system_matrix);
-
     SolverControl            solver_control_2(10000, 1e-12);
     SolverCG<Vector<double>> solver_2(solver_control_2);
 
@@ -213,7 +205,14 @@ Poisson::solve()
 
     //mg_levels[0] -> constraints.print(std::cout);
 
+    VectorTools::interpolate(mg_levels[0] -> dof_handler, 
+                      par.initial_solution, 
+                      solution);
+
     mg_levels[0] -> assemble_system_and_rhs(par.reaction_term, par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
+
+    PreconditionSSOR<SparseMatrix<double>> preconditioner;
+    preconditioner.initialize(mg_levels[0] -> system_matrix);
 
     solver_2.solve(mg_levels[0] -> system_matrix, no_mg_solution, system_rhs, preconditioner);
     mg_levels[0] -> constraints.distribute(no_mg_solution);
@@ -247,44 +246,51 @@ Poisson::solve()
         std::cout<<"\n";
       }
       */
-      
-      //Con il ciclo scritto così, se non è time dependent, esegue solo uno step, come giusto che sia
-      do {
-        mg_levels[0] -> assemble_system_and_rhs(par.reaction_term, par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
+    
+    //Con il ciclo scritto così, se non è time dependent, esegue solo uno step, come giusto che sia
+    do {
+      mg_levels[0] -> assemble_system_and_rhs(par.reaction_term, par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
 
-        //Nei sottolivelli non devo assemblare l rhs
-        for (unsigned int j = 1; j < par.n_v_cycles; j++) {
-          mg_levels[j] -> assemble_system(par.reaction_term, time_info, radii);
-        }
-        my_preconditioner.setup_coarse_grid_solver();
+      //Nei sottolivelli non devo assemblare l rhs
+      for (unsigned int j = 1; j < par.n_v_cycles; j++) {
+        mg_levels[j] -> assemble_system(par.reaction_term, time_info, radii);
+      }
+      my_preconditioner.setup_coarse_grid_solver();
 
-        par.rhs_function.advance_time(time_info.dt);
-        par.neumann_function.advance_time(time_info.dt);
-        par.reaction_term.advance_time(time_info.dt);
+      par.rhs_function.advance_time(time_info.dt);
+      par.neumann_function.advance_time(time_info.dt);
+      par.reaction_term.advance_time(time_info.dt);
 
-        tim.restart();
-        solver.solve(mg_levels[0] -> system_matrix, solution, system_rhs, my_preconditioner);
-        mg_levels[0] -> constraints.distribute(solution);
-        std::cout<<" Tempo impiegato risoluzione";
-        if(time_info.is_time_dependent) 
-          std::cout<< " time-step";
+      tim.restart();
+      solver.solve(mg_levels[0] -> system_matrix, solution, system_rhs, my_preconditioner);
+      mg_levels[0] -> constraints.distribute(solution);
+      std::cout<<" Tempo impiegato risoluzione";
+      if(time_info.is_time_dependent) 
+        std::cout<< " time-step";
 
-        std::cout <<":"<< tim.stop() << " secondi.\n";
+      std::cout <<":"<< tim.stop() << " secondi.\n";
 
-        output_results(i);
+      output_results(i);
 
-        i++;
-      } while(i < par.time_steps && par.is_time_dependent);
-
+      i++;
+    } while(i < par.time_steps && par.is_time_dependent);
+    
     /*
     Vector<double> residue(mg_levels[0] -> dof_handler.n_dofs());
     Vector<double> correction(mg_levels[0] -> dof_handler.n_dofs());
 
-    solution = 0;
-    mg_levels[0] -> assemble_rhs(par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
+    VectorTools::interpolate(mg_levels[0] -> dof_handler, 
+                  par.initial_solution, 
+                  solution);
+
+    mg_levels[0] -> assemble_system_and_rhs(par.reaction_term, par.rhs_function, system_rhs, par.neumann_function, solution, time_info, radii);
+    for (unsigned int j = 1; j < par.n_v_cycles; j++) {
+      mg_levels[j] -> assemble_system(par.reaction_term, time_info, radii);
+    }
+    my_preconditioner.setup_coarse_grid_solver();
+
     for (int k = 0; k < 100; k++) {
       mg_levels[0]-> system_matrix.residual(residue, solution, system_rhs);
-
 
       double res = residue.l2_norm();
 
@@ -295,14 +301,13 @@ Poisson::solve()
       my_preconditioner.vmult(correction, residue);
       mg_levels[0] -> constraints.distribute(correction);
 
-      solution +=correction;
+      solution += correction;
 
       //par.convergence_table.difference(mg_levels[0] -> dof_handler, solution, no_mg_solution);
     }
      
-    //output_results(0);
+    output_results(0);
     */
-    
 
     std::cout << "   " << solver_control.last_step()
               << " CG iterations needed to obtain convergence." << std::endl;  
